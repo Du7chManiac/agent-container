@@ -89,6 +89,28 @@ if [ -n "$OPENCODE_CONFIG_JSON" ]; then
     echo "OpenCode config overridden from OPENCODE_CONFIG_JSON env var."
 fi
 
+# --- Gitea MCP Server ---
+if [ -n "$GITEA_URL" ] && [ -n "$GITEA_TOKEN" ]; then
+    GITEA_MCP_CONFIG=$(jq -n \
+        --arg host "$GITEA_URL" \
+        --arg token "$GITEA_TOKEN" \
+        '{
+            "type": "local",
+            "command": ["gitea-mcp", "-t", "stdio"],
+            "enabled": true,
+            "environment": {
+                "GITEA_HOST": $host,
+                "GITEA_ACCESS_TOKEN": $token
+            }
+        }')
+
+    jq --argjson gitea "$GITEA_MCP_CONFIG" '.mcp.gitea = $gitea' \
+        "$OPENCODE_CONFIG_FILE" > "${OPENCODE_CONFIG_FILE}.tmp" \
+        && mv "${OPENCODE_CONFIG_FILE}.tmp" "$OPENCODE_CONFIG_FILE"
+    chown coder:coder "$OPENCODE_CONFIG_FILE"
+    echo "Gitea MCP server configured for $GITEA_URL."
+fi
+
 # Ensure directories exist and are owned by coder
 mkdir -p /home/coder/.local/share/opencode
 chown -R coder:coder /home/coder/.local/share/opencode
@@ -118,6 +140,25 @@ if [ -n "$GIT_USER_EMAIL" ]; then
     su - coder -c "git config --global user.email '$GIT_USER_EMAIL'"
 fi
 
-# --- Start SSH Daemon ---
-echo "Starting SSH server on port 22..."
-exec /usr/sbin/sshd -D -e
+# --- Start Services ---
+OPENCODE_MODE="${OPENCODE_MODE:-ssh}"
+OPENCODE_PORT="${OPENCODE_PORT:-4096}"
+
+case "$OPENCODE_MODE" in
+    web)
+        echo "Starting SSH server in background..."
+        /usr/sbin/sshd -e
+        echo "Starting opencode web UI on port $OPENCODE_PORT..."
+        exec su - coder -c "opencode web --port $OPENCODE_PORT --hostname 0.0.0.0"
+        ;;
+    serve)
+        echo "Starting SSH server in background..."
+        /usr/sbin/sshd -e
+        echo "Starting opencode server on port $OPENCODE_PORT..."
+        exec su - coder -c "opencode serve --port $OPENCODE_PORT --hostname 0.0.0.0"
+        ;;
+    ssh|*)
+        echo "Starting SSH server on port 22..."
+        exec /usr/sbin/sshd -D -e
+        ;;
+esac

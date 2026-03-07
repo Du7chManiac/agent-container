@@ -1,6 +1,6 @@
 # OpenCode Docker Container for Dokploy
 
-A Docker container running [opencode](https://opencode.ai) — an open-source AI coding agent with a terminal UI — accessible via SSH. Designed for 24/7 deployment on [Dokploy](https://dokploy.com) (self-hosted PaaS) or any Docker host.
+A Docker container running [opencode](https://opencode.ai) — an open-source AI coding agent with a terminal UI — accessible via SSH, web browser, or remote TUI client. Designed for 24/7 deployment on [Dokploy](https://dokploy.com) (self-hosted PaaS) or any Docker host.
 
 ## Quick Start
 
@@ -23,6 +23,68 @@ ssh coder@localhost -p 2222
 opencode
 ```
 
+## Access Modes
+
+The container supports three access modes, controlled by the `OPENCODE_MODE` environment variable:
+
+### SSH Mode (default)
+
+```bash
+OPENCODE_MODE=ssh
+```
+
+Traditional SSH access. Connect via SSH and run `opencode` interactively in your terminal. SSH is always available in all modes.
+
+### Web Mode
+
+```bash
+OPENCODE_MODE=web
+```
+
+Starts the opencode web UI — a full browser-based interface for interacting with the AI agent. Access it at:
+
+```
+http://your-server-ip:4096
+```
+
+SSH remains available in the background for troubleshooting.
+
+### Serve Mode
+
+```bash
+OPENCODE_MODE=serve
+```
+
+Starts a headless HTTP API server (REST + SSE). This allows:
+
+- **Remote TUI** — Connect a local opencode terminal client to the remote server:
+  ```bash
+  opencode attach http://your-server-ip:4096
+  ```
+- **Multiple clients** — Several browsers or TUI clients can connect simultaneously to the same server, sharing session state
+- **API access** — Full REST API with OpenAPI 3.1 spec available at `/doc`
+
+SSH remains available in the background.
+
+### Authentication for Web/Serve Modes
+
+Protect your web/serve endpoint with HTTP Basic Auth:
+
+```bash
+OPENCODE_SERVER_PASSWORD=your-secure-password
+OPENCODE_SERVER_USERNAME=opencode   # optional, defaults to "opencode"
+```
+
+These env vars are read directly by opencode. When set, browsers will show a native login dialog and `opencode attach` clients should set `OPENCODE_SERVER_PASSWORD` locally.
+
+### Port Configuration
+
+The web/serve port defaults to `4096`. Change it with:
+
+```bash
+OPENCODE_PORT=8080
+```
+
 ## Dokploy Deployment
 
 ### Step-by-step
@@ -35,17 +97,25 @@ opencode
 2. **Set environment variables** in Dokploy's Environment tab:
    - `SSH_PUBLIC_KEY` — your public key for SSH access
    - `SSH_PORT` — the host port for SSH (default: `2222`)
+   - `OPENCODE_MODE` — set to `web` or `serve` for browser/remote access
    - Any API keys you need (see [Environment Variables](#environment-variables))
 
-3. **Expose the SSH port**:
-   - In Dokploy's **Ports** settings, ensure the SSH port (default `2222`) is exposed
-   - This is a TCP port, not HTTP — it cannot go through Traefik's HTTP proxy
+3. **Expose ports**:
+   - SSH port (default `2222`) — TCP port, cannot go through Traefik
+   - OpenCode port (default `4096`) — HTTP port, can be proxied through Traefik for web/serve modes
 
 4. **Deploy** the service
 
-5. **Connect via SSH**:
+5. **Connect**:
    ```bash
+   # SSH
    ssh coder@your-server-ip -p 2222
+
+   # Browser (web mode)
+   open http://your-server-ip:4096
+
+   # Remote TUI (serve mode)
+   opencode attach http://your-server-ip:4096
    ```
 
 ### Network Note
@@ -159,6 +229,37 @@ GIT_USER_NAME="Your Name"
 GIT_USER_EMAIL="you@example.com"
 ```
 
+## Gitea Integration
+
+The container includes the [official Gitea MCP server](https://gitea.com/gitea/gitea-mcp), pre-installed as a Go binary. When configured, this gives the AI agent direct access to your Gitea instance — it can manage repositories, issues, pull requests, branches, releases, and more.
+
+### Setup
+
+Set these environment variables:
+
+```bash
+GITEA_URL=https://gitea.example.com    # Your Gitea instance URL
+GITEA_TOKEN=your-personal-access-token  # Gitea PAT with appropriate scopes
+```
+
+On startup, the entrypoint automatically injects the Gitea MCP server configuration into `opencode.json`. The AI agent will have access to Gitea tools in its next session.
+
+### Generating a Gitea Token
+
+1. Go to your Gitea instance → **Settings** → **Applications** → **Access Tokens**
+2. Create a new token with the scopes you need (e.g., `repo`, `issue`, `admin:org`)
+3. Copy the token into `GITEA_TOKEN`
+
+### What the Agent Can Do
+
+With the Gitea MCP server, the AI agent can:
+- Create, list, and manage repositories
+- Create, edit, and search issues
+- Manage pull requests and code reviews
+- Work with branches, tags, and releases
+- Search code across repositories
+- Manage organizations and teams
+
 ## Customizing OpenCode Config
 
 ### Default Config
@@ -220,6 +321,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Go** | 1.23.6 | Official binary |
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
+| **Gitea MCP** | Latest | Official Go binary, auto-configured via env vars |
 | **build-essential** | System | gcc, g++, make |
 | **ripgrep (rg)** | System | Fast file search |
 | **fd-find (fd)** | System | Fast file finder |
@@ -262,6 +364,10 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 | `SSH_PASSWORD` | No* | — | Password for SSH password auth |
 | `SSH_PORT` | No | `2222` | Host port mapped to container SSH |
 | `TZ` | No | `UTC` | Timezone (e.g., `America/New_York`) |
+| `OPENCODE_MODE` | No | `ssh` | Access mode: `ssh`, `web`, or `serve` |
+| `OPENCODE_PORT` | No | `4096` | Port for web/serve modes |
+| `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve |
+| `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve |
 | `GIT_REPO_URL` | No | — | Repository URL to clone on startup |
 | `GIT_BRANCH` | No | — | Branch to checkout (default: repo default) |
 | `GIT_USER_NAME` | No | — | Git commit author name |
@@ -272,6 +378,8 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 | `GOOGLE_API_KEY` | No | — | Google Gemini API key |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
 | `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI |
+| `GITEA_URL` | No | — | Gitea instance URL |
+| `GITEA_TOKEN` | No | — | Gitea personal access token |
 
 \* At least one of `SSH_PUBLIC_KEY` or `SSH_PASSWORD` is recommended. If neither is set, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
 
@@ -283,6 +391,19 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 - Check container logs: `docker compose logs opencode`
 - Ensure your firewall allows the SSH port
 - On Dokploy, confirm the port is configured in the Ports settings
+
+### Web UI not accessible
+
+- Verify `OPENCODE_MODE=web` is set in your `.env`
+- Check the port is exposed: `docker compose ps` should show `0.0.0.0:4096->4096/tcp`
+- Check container logs: `docker compose logs opencode`
+- Ensure your firewall allows port 4096 (or your custom `OPENCODE_PORT`)
+
+### Cannot attach remote TUI
+
+- Verify `OPENCODE_MODE=serve` is set
+- Ensure the port is reachable from your local machine
+- If auth is enabled, set `OPENCODE_SERVER_PASSWORD` on your local machine before running `opencode attach`
 
 ### "Host key changed" warning after rebuild
 
@@ -315,6 +436,13 @@ ssh-keygen -R "[localhost]:2222"
 - Verify `GIT_REPO_URL` is accessible from the container
 - For private repos, ensure SSH keys or tokens are configured
 - Check logs for specific git error messages
+
+### Gitea MCP not working
+
+- Verify both `GITEA_URL` and `GITEA_TOKEN` are set
+- Check that the token has appropriate scopes in your Gitea instance
+- Inspect the generated config: `cat ~/.config/opencode/opencode.json`
+- Check container logs for "Gitea MCP server configured" message
 
 ### Dokploy network not found
 
