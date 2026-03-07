@@ -1,0 +1,5 @@
+.env
+*.pem
+*.key
+id_rsa*
+auth.json
