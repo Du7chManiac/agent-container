@@ -3,3 +3,4 @@
 *.key
 id_rsa*
 auth.json
+tests/bats/
