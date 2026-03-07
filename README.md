@@ -318,7 +318,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Node.js** | 22.x LTS | Via NodeSource |
 | **npm** | Bundled with Node.js | |
 | **Python 3** | System (3.12) | With pip and venv |
-| **Go** | 1.23.6 | Official binary |
+| **Go** | 1.26.1 | Official binary |
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea MCP** | Latest | Official Go binary, auto-configured via env vars |
