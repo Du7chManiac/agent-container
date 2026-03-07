@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ARG TARGETARCH=amd64
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
@@ -10,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     openssh-server sudo git curl wget unzip build-essential \
     python3 python3-pip python3-venv \
     jq ripgrep fd-find tmux vim nano less htop \
-    ca-certificates gnupg locales openssl \
+    ca-certificates gnupg locales openssl tzdata \
     && locale-gen en_US.UTF-8 \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
@@ -30,8 +32,8 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Go 1.23.x
-RUN curl -fsSL https://go.dev/dl/go1.23.6.linux-amd64.tar.gz | tar -C /usr/local -xz
+# Go 1.23.x (multi-arch)
+RUN curl -fsSL "https://go.dev/dl/go1.23.6.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # Create non-root user
@@ -49,16 +51,24 @@ ENV PATH="/home/coder/.local/bin:${PATH}"
 ENV GOPATH="/home/coder/go"
 ENV PATH="${GOPATH}/bin:/usr/local/go/bin:${PATH}"
 
-# Create directories for persistence
-RUN mkdir -p /home/coder/.config/opencode \
-    /home/coder/.local/share/opencode \
-    /home/coder/.ssh \
-    /home/coder/workspace
-
+# Create skeleton directory for first-boot home initialization
 USER root
+RUN mkdir -p /etc/skel.coder/.config/opencode \
+    /etc/skel.coder/.local/share/opencode \
+    /etc/skel.coder/.local/bin \
+    /etc/skel.coder/.ssh \
+    /etc/skel.coder/workspace \
+    /etc/skel.coder/go \
+    && cp -a /home/coder/.local/bin/. /etc/skel.coder/.local/bin/ 2>/dev/null || true \
+    && cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
+    && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 22
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ssh-keyscan -p 22 localhost >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

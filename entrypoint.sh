@@ -1,10 +1,45 @@
 #!/bin/bash
 set -e
 
+# --- First-boot Home Directory Initialization ---
+if [ ! -f /home/coder/.initialized ]; then
+    cp -rn /etc/skel.coder/. /home/coder/
+    touch /home/coder/.initialized
+    chown -R coder:coder /home/coder
+    echo "Initialized home directory from skeleton."
+fi
+
+# --- Timezone ---
+if [ -n "$TZ" ]; then
+    ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+    echo "$TZ" > /etc/timezone
+    echo "Timezone set to $TZ."
+fi
+
+# --- SSH Host Key Persistence ---
+HOST_KEY_DIR="/etc/ssh/host_keys"
+mkdir -p "$HOST_KEY_DIR"
+
+if [ -f "$HOST_KEY_DIR/ssh_host_ed25519_key" ]; then
+    cp "$HOST_KEY_DIR"/ssh_host_* /etc/ssh/
+    echo "Restored persisted SSH host keys."
+else
+    ssh-keygen -A
+    cp /etc/ssh/ssh_host_* "$HOST_KEY_DIR/"
+    echo "Generated and persisted new SSH host keys."
+fi
+
 # --- SSH Configuration ---
 sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Smart password auth: disable when key is provided without password
+if [ -n "$SSH_PUBLIC_KEY" ] && [ -z "$SSH_PASSWORD" ]; then
+    sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    echo "Password authentication disabled (key-only mode)."
+else
+    sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+fi
 
 # SSH public key auth
 if [ -n "$SSH_PUBLIC_KEY" ]; then
