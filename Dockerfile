@@ -36,6 +36,12 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 RUN curl -fsSL "https://go.dev/dl/go1.23.6.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
+# Install Gitea MCP server (official Go binary)
+ENV GOPATH="/tmp/go-build"
+RUN go install gitea.com/gitea/gitea-mcp@latest \
+    && cp "${GOPATH}/bin/gitea-mcp" /usr/local/bin/gitea-mcp \
+    && rm -rf "${GOPATH}"
+
 # Create non-root user
 RUN useradd -m -s /bin/bash -u 1000 coder \
     && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/coder \
@@ -66,7 +72,7 @@ RUN mkdir -p /etc/skel.coder/.config/opencode \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 22
+EXPOSE 22 4096
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ssh-keyscan -p 22 localhost >/dev/null 2>&1 || exit 1

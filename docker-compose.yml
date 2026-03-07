@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "${SSH_PORT:-2222}:22"
+      - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
     env_file:
       - .env
     volumes:
