@@ -9,16 +9,14 @@ services:
     env_file:
       - .env
     volumes:
-      - opencode-auth:/home/coder/.local/share/opencode
-      - opencode-config:/home/coder/.config/opencode
-      - workspace:/home/coder/workspace
+      - coder-home:/home/coder
+      - ssh-host-keys:/etc/ssh/host_keys
     networks:
       - dokploy-network
 
 volumes:
-  opencode-auth:
-  opencode-config:
-  workspace:
+  coder-home:
+  ssh-host-keys:
 
 networks:
   dokploy-network:

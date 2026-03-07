@@ -74,7 +74,7 @@ The `docker-compose.yml` references `dokploy-network` as an external network. Th
 
 5. A URL will be displayed — open it in your local browser, complete the authentication, and paste the resulting key back into the terminal
 
-6. Your credentials are stored in `~/.local/share/opencode/` which is persisted via the `opencode-auth` Docker volume — they survive container restarts and redeployments.
+6. Your credentials are stored in `~/.local/share/opencode/` which is persisted via the `coder-home` Docker volume — they survive container restarts and redeployments.
 
 ## Alternative: API Keys
 
@@ -99,6 +99,8 @@ Set `SSH_PUBLIC_KEY` in your `.env` to the contents of your public key:
 SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3... user@machine"
 ```
 
+When only a key is provided (no `SSH_PASSWORD`), password authentication is automatically disabled for improved security.
+
 Then connect:
 ```bash
 ssh coder@your-server -p 2222
@@ -111,6 +113,10 @@ Set `SSH_PASSWORD` in your `.env`:
 ```bash
 SSH_PASSWORD=your-secure-password
 ```
+
+### Both Key and Password
+
+If both `SSH_PUBLIC_KEY` and `SSH_PASSWORD` are set, both authentication methods are enabled.
 
 ### No Credentials Set
 
@@ -142,7 +148,7 @@ cd ~/workspace
 git clone https://github.com/user/repo.git
 ```
 
-The `~/workspace` directory is backed by the `workspace` Docker volume and persists across restarts.
+The `~/workspace` directory is part of the `coder-home` volume and persists across restarts.
 
 ### Git Identity
 
@@ -180,10 +186,28 @@ OPENCODE_CONFIG_JSON='{"$schema":"https://opencode.ai/config.json","provider":"a
 
 ### Edit Directly
 
-The config file is persisted in the `opencode-config` volume. SSH in and edit it:
+The config file is persisted in the `coder-home` volume. SSH in and edit it:
 
 ```bash
 nano ~/.config/opencode/opencode.json
+```
+
+## Timezone
+
+By default the container runs in UTC. Set the `TZ` environment variable to use a different timezone:
+
+```bash
+TZ=America/New_York
+```
+
+This affects system logs, git commit timestamps, and all time-related operations. See [the full list of timezone names](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
+
+## Multi-Architecture Support
+
+The Docker image supports both **amd64** (x86_64) and **arm64** (aarch64) architectures. The correct Go binary is automatically selected during the build based on the target platform. To build for a specific architecture:
+
+```bash
+docker buildx build --platform linux/arm64 -t opencode-agent .
 ```
 
 ## Included Development Tools
@@ -211,17 +235,24 @@ The `coder` user has passwordless `sudo` access, so you can install additional t
 sudo apt-get update && sudo apt-get install -y <package>
 ```
 
-Note: Packages installed via `sudo` will not persist across container restarts. To make them permanent, add them to the `Dockerfile`.
+Note: Packages installed via `sudo` are now persisted across restarts thanks to the `coder-home` volume. However, they will not survive a full image rebuild — to make them permanent across rebuilds, add them to the `Dockerfile`.
 
 ## Volume Reference
 
 | Volume | Container Path | Purpose |
 |--------|---------------|---------|
-| `opencode-auth` | `/home/coder/.local/share/opencode` | OpenCode authentication credentials and session data |
-| `opencode-config` | `/home/coder/.config/opencode` | OpenCode configuration (`opencode.json`) |
-| `workspace` | `/home/coder/workspace` | Cloned repositories and project files |
+| `coder-home` | `/home/coder` | Entire home directory — config, auth, workspace, bash history, installed tools, dotfiles |
+| `ssh-host-keys` | `/etc/ssh/host_keys` | SSH host keys — prevents "host key changed" warnings after restarts |
 
-All three volumes are Docker named volumes, which persist data across container restarts, rebuilds, and redeployments.
+Both volumes are Docker named volumes, which persist data across container restarts, rebuilds, and redeployments.
+
+### First-boot Initialization
+
+On first start (when the `coder-home` volume is empty), the entrypoint copies a skeleton directory into `/home/coder` with the opencode binary and default directory structure. Subsequent starts reuse the existing home directory contents.
+
+### Health Check
+
+The container includes a Docker HEALTHCHECK that verifies the SSH daemon is accepting connections. Docker and Dokploy will report the container as `healthy` once SSH is ready, and will flag it as `unhealthy` if the SSH daemon becomes unresponsive.
 
 ## Environment Variables
 
@@ -230,6 +261,7 @@ All three volumes are Docker named volumes, which persist data across container 
 | `SSH_PUBLIC_KEY` | No* | — | SSH public key for key-based auth |
 | `SSH_PASSWORD` | No* | — | Password for SSH password auth |
 | `SSH_PORT` | No | `2222` | Host port mapped to container SSH |
+| `TZ` | No | `UTC` | Timezone (e.g., `America/New_York`) |
 | `GIT_REPO_URL` | No | — | Repository URL to clone on startup |
 | `GIT_BRANCH` | No | — | Branch to checkout (default: repo default) |
 | `GIT_USER_NAME` | No | — | Git commit author name |
@@ -241,7 +273,7 @@ All three volumes are Docker named volumes, which persist data across container 
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
 | `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI |
 
-\* At least one of `SSH_PUBLIC_KEY` or `SSH_PASSWORD` is recommended. If neither is set, a random password is generated and logged.
+\* At least one of `SSH_PUBLIC_KEY` or `SSH_PASSWORD` is recommended. If neither is set, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
 
 ## Troubleshooting
 
@@ -252,9 +284,20 @@ All three volumes are Docker named volumes, which persist data across container 
 - Ensure your firewall allows the SSH port
 - On Dokploy, confirm the port is configured in the Ports settings
 
+### "Host key changed" warning after rebuild
+
+If you see `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED`, the SSH host keys were regenerated. This should not happen during normal restarts (keys are persisted in the `ssh-host-keys` volume), but can occur if:
+- The `ssh-host-keys` volume was deleted
+- You rebuilt with `docker compose down -v`
+
+Fix: Remove the old host key from your local `~/.ssh/known_hosts`:
+```bash
+ssh-keygen -R "[localhost]:2222"
+```
+
 ### Authentication credentials lost after restart
 
-- Verify the `opencode-auth` volume exists: `docker volume ls | grep opencode-auth`
+- Verify the `coder-home` volume exists: `docker volume ls | grep coder-home`
 - Ensure you're not using `docker compose down -v` (the `-v` flag deletes volumes)
 
 ### opencode command not found
