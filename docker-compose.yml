@@ -1,0 +1,25 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${SSH_PORT:-2222}:22"
+    env_file:
+      - .env
+    volumes:
+      - opencode-auth:/home/coder/.local/share/opencode
+      - opencode-config:/home/coder/.config/opencode
+      - workspace:/home/coder/workspace
+    networks:
+      - dokploy-network
+
+volumes:
+  opencode-auth:
+  opencode-config:
+  workspace:
+
+networks:
+  dokploy-network:
+    external: true
