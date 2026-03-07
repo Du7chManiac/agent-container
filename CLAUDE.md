@@ -7,7 +7,7 @@ Docker container packaging the [OpenCode](https://opencode.ai) AI coding agent f
 ## Key Files
 
 - `entrypoint.sh` — Main initialization script. Validates env vars, configures SSH, sets up OpenCode config, handles auto-update, clones repos, and starts services.
-- `Dockerfile` — Multi-arch Ubuntu 24.04 image with Node.js 22, Go 1.23, Python 3, GitHub CLI, and Gitea MCP.
+- `Dockerfile` — Multi-arch Ubuntu 24.04 image with Node.js 22, Go 1.26, Python 3, GitHub CLI, and Gitea MCP.
 - `docker-compose.yml` — Compose config with named volumes (`coder-home`, `ssh-host-keys`) and `dokploy-network`.
 - `.env.example` — All 20 configurable environment variables with descriptions.
 
