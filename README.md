@@ -372,6 +372,7 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 | `GIT_BRANCH` | No | — | Branch to checkout (default: repo default) |
 | `GIT_USER_NAME` | No | — | Git commit author name |
 | `GIT_USER_EMAIL` | No | — | Git commit author email |
+| `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
 | `OPENCODE_CONFIG_JSON` | No | — | Full opencode config JSON (overrides default) |
 | `ANTHROPIC_API_KEY` | No | — | Anthropic API key |
 | `OPENAI_API_KEY` | No | — | OpenAI API key |
@@ -382,6 +383,67 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 | `GITEA_TOKEN` | No | — | Gitea personal access token |
 
 \* At least one of `SSH_PUBLIC_KEY` or `SSH_PASSWORD` is recommended. If neither is set, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
+
+## Auto-Update
+
+By default, the container uses the OpenCode version that was installed when the image was built. To check for and install the latest version on every container start, set:
+
+```bash
+OPENCODE_AUTO_UPDATE=true
+```
+
+The update runs before services start. If the update fails (e.g., due to network issues), the container continues with the existing version.
+
+## Environment Validation
+
+On startup, the entrypoint validates all configuration before proceeding. Invalid configuration causes the container to exit immediately with clear error messages instead of failing silently later. The following checks are performed:
+
+- `OPENCODE_MODE` must be one of `ssh`, `web`, or `serve`
+- `OPENCODE_PORT` must be a number between 1 and 65535
+- `TZ` must be a valid timezone from the tz database
+- `GITEA_URL` and `GITEA_TOKEN` must both be set or both empty
+- `OPENCODE_CONFIG_JSON` must be valid JSON if set
+- `GIT_REPO_URL` format is checked (warning only)
+- A warning is shown if no SSH authentication method is configured
+
+## Development
+
+### Prerequisites
+
+- [shellcheck](https://www.shellcheck.net/) — static analysis for shell scripts
+- [bats-core](https://github.com/bats-core/bats-core) — installed automatically by `make`
+
+### Running Tests
+
+```bash
+# Run lint + unit tests
+make test
+
+# Run shellcheck only
+make lint
+
+# Run bats unit tests only
+make test-unit
+
+# Build Docker image (smoke test)
+make build
+```
+
+### Test Structure
+
+```
+tests/
+  test_helper.bash          # Shared setup: sources entrypoint functions
+  test_logging.bats         # Tests for log_info, log_warn, log_error
+  test_validate_env.bats    # Tests for all env validation paths (~27 tests)
+```
+
+### CI
+
+GitHub Actions runs on every push to `main` and on all pull requests:
+- **lint** — shellcheck on `entrypoint.sh`
+- **unit-tests** — all bats test suites
+- **docker-build** — Docker image build smoke test
 
 ## Troubleshooting
 
