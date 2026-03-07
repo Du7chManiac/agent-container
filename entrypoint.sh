@@ -91,6 +91,12 @@ validate_env() {
     log_info "Environment validation passed."
 }
 
+# Guard: when sourced for testing, stop here and export only function definitions
+if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
+    # shellcheck disable=SC2317
+    return 0 2>/dev/null || :
+fi
+
 validate_env
 
 # ==============================================================================
