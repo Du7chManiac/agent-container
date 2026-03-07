@@ -43,7 +43,8 @@ RUN go install gitea.com/gitea/gitea-mcp@latest \
     && rm -rf "${GOPATH}"
 
 # Create non-root user
-RUN useradd -m -s /bin/bash -u 1000 coder \
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && useradd -m -s /bin/bash -u 1000 coder \
     && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/coder \
     && chmod 0440 /etc/sudoers.d/coder
 
