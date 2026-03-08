@@ -65,7 +65,7 @@ RUN mkdir -p /etc/skel.coder/.config/opencode \
     /etc/skel.coder/.ssh \
     /etc/skel.coder/workspace \
     /etc/skel.coder/go \
-    && cp -a /home/coder/.local/bin/. /etc/skel.coder/.local/bin/ 2>/dev/null || true \
+    && cp -a /home/coder/.local/bin/opencode /etc/skel.coder/.local/bin/opencode \
     && cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
     && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
 
