@@ -126,11 +126,22 @@ if [ ! -f /home/coder/.initialized ]; then
 fi
 
 # Ensure opencode binary exists (may be missing if volume predates image)
-if [ ! -x /home/coder/.local/bin/opencode ] && [ -x /etc/skel.coder/.local/bin/opencode ]; then
-    mkdir -p /home/coder/.local/bin
-    cp -a /etc/skel.coder/.local/bin/opencode /home/coder/.local/bin/opencode
-    chown coder:coder /home/coder/.local/bin/opencode
-    log_info "Restored opencode binary from skeleton."
+OPENCODE_BIN="/home/coder/.local/bin/opencode"
+if [ ! -x "$OPENCODE_BIN" ]; then
+    if [ -x /etc/skel.coder/.local/bin/opencode ]; then
+        mkdir -p /home/coder/.local/bin
+        cp -a /etc/skel.coder/.local/bin/opencode "$OPENCODE_BIN"
+        chown coder:coder "$OPENCODE_BIN"
+        log_info "Restored opencode binary from skeleton."
+    else
+        log_warn "OpenCode binary not found. Reinstalling..."
+        if su - coder -c "curl -fsSL https://opencode.ai/install | bash"; then
+            log_info "OpenCode reinstalled successfully."
+        else
+            log_error "Failed to install OpenCode. Container cannot start."
+            exit 1
+        fi
+    fi
 fi
 
 # ==============================================================================
@@ -208,7 +219,6 @@ fi
 # OpenCode Auto-Update
 # ==============================================================================
 OPENCODE_AUTO_UPDATE="${OPENCODE_AUTO_UPDATE:-false}"
-OPENCODE_BIN="/home/coder/.local/bin/opencode"
 
 update_opencode() {
     log_info "Checking for OpenCode updates..."
