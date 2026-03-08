@@ -357,6 +357,7 @@ while IFS='=' read -r key val; do
             ;;
     esac
 done < <(env)
+chown coder:coder "$OPENCODE_ENV_FILE"
 chmod 600 "$OPENCODE_ENV_FILE"
 
 case "$OPENCODE_MODE" in
