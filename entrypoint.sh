@@ -336,7 +336,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode server on port $OPENCODE_PORT..."
-        exec su - coder -c "opencode serve --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "$OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     web)
         if [ "$SSH_ENABLED" = "true" ]; then
@@ -345,7 +345,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode web UI on port $OPENCODE_PORT..."
-        exec su - coder -c "opencode web --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "$OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     ssh)
         log_info "Starting SSH server on port 22..."
