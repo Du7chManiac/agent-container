@@ -126,11 +126,11 @@ if [ ! -f /home/coder/.initialized ]; then
 fi
 
 # Ensure opencode binary exists (may be missing if volume predates image)
-OPENCODE_BIN="/home/coder/.local/bin/opencode"
+OPENCODE_BIN="/home/coder/.opencode/bin/opencode"
 if [ ! -x "$OPENCODE_BIN" ]; then
-    if [ -x /etc/skel.coder/.local/bin/opencode ]; then
-        mkdir -p /home/coder/.local/bin
-        cp -a /etc/skel.coder/.local/bin/opencode "$OPENCODE_BIN"
+    if [ -x /etc/skel.coder/.opencode/bin/opencode ]; then
+        mkdir -p /home/coder/.opencode/bin
+        cp -a /etc/skel.coder/.opencode/bin/opencode "$OPENCODE_BIN"
         chown coder:coder "$OPENCODE_BIN"
         log_info "Restored opencode binary from skeleton."
     else
@@ -240,7 +240,7 @@ update_opencode() {
         if [ "$current_version" != "$new_version" ]; then
             log_info "OpenCode updated: ${current_version} -> ${new_version}"
             # Update skeleton so new containers also get the latest
-            cp -a "$OPENCODE_BIN" /etc/skel.coder/.local/bin/opencode 2>/dev/null || true
+            cp -a "$OPENCODE_BIN" /etc/skel.coder/.opencode/bin/opencode 2>/dev/null || true
         else
             log_info "OpenCode is already up to date (${new_version})."
         fi

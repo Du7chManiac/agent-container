@@ -51,7 +51,7 @@ RUN userdel -r ubuntu 2>/dev/null || true \
 USER coder
 WORKDIR /home/coder
 RUN curl -fsSL https://opencode.ai/install | bash
-ENV PATH="/home/coder/.local/bin:${PATH}"
+ENV PATH="/home/coder/.opencode/bin:${PATH}"
 
 # Go path for coder
 ENV GOPATH="/home/coder/go"
@@ -61,12 +61,12 @@ ENV PATH="${GOPATH}/bin:/usr/local/go/bin:${PATH}"
 USER root
 RUN mkdir -p /etc/skel.coder/.config/opencode \
     /etc/skel.coder/.local/share/opencode \
-    /etc/skel.coder/.local/bin \
+    /etc/skel.coder/.opencode/bin \
     /etc/skel.coder/.ssh \
     /etc/skel.coder/workspace \
     /etc/skel.coder/go \
-    && cp -a /home/coder/.local/bin/opencode /etc/skel.coder/.local/bin/opencode \
-    && cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
+    && cp -a /home/coder/.opencode/bin/opencode /etc/skel.coder/.opencode/bin/opencode
+RUN cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
     && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
 
 COPY entrypoint.sh /entrypoint.sh
