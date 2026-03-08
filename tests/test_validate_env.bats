@@ -5,7 +5,7 @@ setup() {
     # Clear all env vars that validate_env checks
     unset OPENCODE_MODE OPENCODE_PORT TZ GIT_REPO_URL
     unset GITEA_URL GITEA_TOKEN OPENCODE_CONFIG_JSON
-    unset SSH_PUBLIC_KEY SSH_PASSWORD
+    unset SSH_PUBLIC_KEY SSH_PASSWORD SSH_ENABLED
 }
 
 teardown() {
@@ -185,16 +185,60 @@ teardown() {
     [[ "$output" == *"not valid JSON"* ]]
 }
 
-# --- SSH auth warning ---
+# --- SSH_ENABLED validation ---
 
-@test "validate_env: warns when no SSH auth configured" {
+@test "validate_env: accepts SSH_ENABLED=true" {
+    export SSH_ENABLED=true
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: accepts SSH_ENABLED=false" {
+    export SSH_ENABLED=false
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: accepts unset SSH_ENABLED" {
+    unset SSH_ENABLED
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: rejects SSH_ENABLED=invalid" {
+    export SSH_ENABLED=invalid
+    run validate_env
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid SSH_ENABLED"* ]]
+}
+
+# --- SSH auth warning (only when SSH is active) ---
+
+@test "validate_env: warns when no SSH auth configured and OPENCODE_MODE=ssh" {
+    export OPENCODE_MODE=ssh
     unset SSH_PUBLIC_KEY SSH_PASSWORD
     run validate_env
     [ "$status" -eq 0 ]
     [[ "$output" == *"random password will be generated"* ]]
 }
 
+@test "validate_env: warns when no SSH auth configured and SSH_ENABLED=true" {
+    export SSH_ENABLED=true
+    unset SSH_PUBLIC_KEY SSH_PASSWORD
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"random password will be generated"* ]]
+}
+
+@test "validate_env: no SSH warning in default serve mode" {
+    unset OPENCODE_MODE SSH_ENABLED SSH_PUBLIC_KEY SSH_PASSWORD
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"random password"* ]]
+}
+
 @test "validate_env: no warning when SSH_PUBLIC_KEY is set" {
+    export OPENCODE_MODE=ssh
     export SSH_PUBLIC_KEY="ssh-ed25519 AAAA..."
     run validate_env
     [ "$status" -eq 0 ]

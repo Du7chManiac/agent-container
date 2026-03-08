@@ -2,14 +2,15 @@
 
 ## Project Overview
 
-Docker container packaging the [OpenCode](https://opencode.ai) AI coding agent for deployment on [Dokploy](https://dokploy.com) or any Docker host. Provides SSH, web, and serve access modes.
+Docker container packaging the [OpenCode](https://opencode.ai) AI coding agent for deployment on [Dokploy](https://dokploy.com) or any Docker host. Default mode is `serve` (HTTP API). SSH is optional via `SSH_ENABLED=true` or `OPENCODE_MODE=ssh`.
 
 ## Key Files
 
-- `entrypoint.sh` — Main initialization script. Validates env vars, configures SSH, sets up OpenCode config, handles auto-update, clones repos, and starts services.
+- `entrypoint.sh` — Main initialization script. Validates env vars, conditionally configures SSH, sets up OpenCode config, handles auto-update, clones repos, and starts services.
+- `healthcheck.sh` — Mode-aware Docker healthcheck (HTTP for serve/web, ssh-keyscan for ssh mode).
 - `Dockerfile` — Multi-arch Ubuntu 24.04 image with Node.js 22, Go 1.26, Python 3, GitHub CLI, and Gitea MCP.
 - `docker-compose.yml` — Compose config with named volumes (`coder-home`, `ssh-host-keys`) and `dokploy-network`.
-- `.env.example` — All 20 configurable environment variables with descriptions.
+- `.env.example` — All 21 configurable environment variables with descriptions.
 
 ## Architecture
 
@@ -19,7 +20,7 @@ The container runs as a non-root `coder` user (UID 1000) with passwordless sudo.
 
 1. Validate environment variables (fails fast on errors)
 2. Initialize home directory from skeleton (first boot only)
-3. Configure timezone, SSH host keys, SSH auth
+3. Configure timezone, SSH (only if `OPENCODE_MODE=ssh` or `SSH_ENABLED=true`)
 4. Auto-update OpenCode binary (if `OPENCODE_AUTO_UPDATE=true`)
 5. Generate/override OpenCode config, configure Gitea MCP
 6. Clone git repo (if `GIT_REPO_URL` set)
@@ -44,7 +45,7 @@ Tests use [bats-core](https://github.com/bats-core/bats-core) (auto-installed by
 
 - `tests/test_helper.bash` — Sources entrypoint functions via the testing guard
 - `tests/test_logging.bats` — 6 tests for `log_info`, `log_warn`, `log_error`
-- `tests/test_validate_env.bats` — 27 tests covering all validation paths
+- `tests/test_validate_env.bats` — 33 tests covering all validation paths
 
 ## Shell Script Conventions
 

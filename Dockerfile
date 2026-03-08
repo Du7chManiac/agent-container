@@ -70,11 +70,12 @@ RUN mkdir -p /etc/skel.coder/.config/opencode \
     && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh
 
-EXPOSE 22 4096
+EXPOSE 4096
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ssh-keyscan -p 22 localhost >/dev/null 2>&1 || exit 1
+    CMD /healthcheck.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
