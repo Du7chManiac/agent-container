@@ -1,39 +1,49 @@
 # OpenCode Docker Container for Dokploy
 
-A Docker container running [opencode](https://opencode.ai) — an open-source AI coding agent with a terminal UI — accessible via SSH, web browser, or remote TUI client. Designed for 24/7 deployment on [Dokploy](https://dokploy.com) (self-hosted PaaS) or any Docker host.
+A Docker container running [opencode](https://opencode.ai) — an open-source AI coding agent with a terminal UI — accessible via browser, remote TUI client, or SSH. Designed for 24/7 deployment on [Dokploy](https://dokploy.com) (self-hosted PaaS) or any Docker host.
 
 ## Quick Start
+
+For Dokploy deployment, see [Dokploy Deployment](#dokploy-deployment).
+
+For standalone Docker usage:
 
 ```bash
 # 1. Clone this repo
 git clone https://github.com/Du7chManiac/agent-container.git
 cd agent-container
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set SSH_PUBLIC_KEY or SSH_PASSWORD
+# 2. Create the external network
+docker network create dokploy-network
 
 # 3. Start the container
 docker compose up -d
 
-# 4. SSH into the container
-ssh coder@localhost -p 2222
-
-# 5. Launch opencode
-opencode
+# 4. Access via browser or remote TUI
+# Browser (web mode): http://localhost:4096
+# Remote TUI (serve mode): opencode attach http://localhost:4096
 ```
+
+> **Note:** When running standalone, you may need to add `ports` back to `docker-compose.yml` or use `docker exec` to access the container. See `env.example` for all configurable environment variables.
 
 ## Access Modes
 
 The container supports three access modes, controlled by the `OPENCODE_MODE` environment variable:
 
-### SSH Mode (default)
+### Serve Mode (default)
 
 ```bash
-OPENCODE_MODE=ssh
+OPENCODE_MODE=serve
 ```
 
-Traditional SSH access. Connect via SSH and run `opencode` interactively in your terminal. SSH is always available in all modes.
+Starts a headless HTTP API server (REST + SSE). This allows:
+
+- **Remote TUI** — Connect a local opencode terminal client to the remote server:
+  ```bash
+  opencode attach https://your-domain.example.com
+  ```
+- **Multiple clients** — Several browsers or TUI clients can connect simultaneously to the same server, sharing session state
+- **API access** — Full REST API with OpenAPI 3.1 spec available at `/doc`
 
 ### Web Mode
 
@@ -44,27 +54,18 @@ OPENCODE_MODE=web
 Starts the opencode web UI — a full browser-based interface for interacting with the AI agent. Access it at:
 
 ```
-http://your-server-ip:4096
+https://your-domain.example.com
 ```
 
-SSH remains available in the background for troubleshooting.
-
-### Serve Mode
+### SSH Mode (advanced)
 
 ```bash
-OPENCODE_MODE=serve
+OPENCODE_MODE=ssh
 ```
 
-Starts a headless HTTP API server (REST + SSE). This allows:
+Traditional SSH access. Connect via SSH and run `opencode` interactively in your terminal. This mode is useful for troubleshooting or when you prefer a direct terminal connection.
 
-- **Remote TUI** — Connect a local opencode terminal client to the remote server:
-  ```bash
-  opencode attach http://your-server-ip:4096
-  ```
-- **Multiple clients** — Several browsers or TUI clients can connect simultaneously to the same server, sharing session state
-- **API access** — Full REST API with OpenAPI 3.1 spec available at `/doc`
-
-SSH remains available in the background.
+> **Tip:** You can also enable SSH alongside serve/web modes by setting `SSH_ENABLED=true`. See [Optional SSH Access](#optional-ssh-access-advanced).
 
 ### Authentication for Web/Serve Modes
 
@@ -94,29 +95,37 @@ OPENCODE_PORT=8080
    - Create a new **Compose** project
    - Point it to this repository (or paste the `docker-compose.yml` contents)
 
-2. **Set environment variables** in Dokploy's Environment tab:
-   - `SSH_PUBLIC_KEY` — your public key for SSH access
-   - `SSH_PORT` — the host port for SSH (default: `2222`)
-   - `OPENCODE_MODE` — set to `web` or `serve` for browser/remote access
+2. **Set environment variables** in Dokploy's **Environment** tab:
+   - `OPENCODE_SERVER_PASSWORD` — secure your web/serve endpoint
    - Any API keys you need (see [Environment Variables](#environment-variables))
+   - For `OPENCODE_CONFIG_JSON`, paste the JSON as a single line
 
-3. **Expose ports**:
-   - SSH port (default `2222`) — TCP port, cannot go through Traefik
-   - OpenCode port (default `4096`) — HTTP port, can be proxied through Traefik for web/serve modes
+3. **Configure domain** — In Dokploy's **Domains** settings:
+   - Add a domain (e.g., `opencode.example.com`)
+   - Set the container port to `4096` (or your custom `OPENCODE_PORT`)
+   - Traefik handles SSL termination and HTTP routing automatically
 
 4. **Deploy** the service
 
 5. **Connect**:
    ```bash
-   # SSH
-   ssh coder@your-server-ip -p 2222
-
    # Browser (web mode)
-   open http://your-server-ip:4096
+   https://opencode.example.com
 
-   # Remote TUI (serve mode)
-   opencode attach http://your-server-ip:4096
+   # Remote TUI (serve mode — default)
+   opencode attach https://opencode.example.com
    ```
+
+### Optional: Enable SSH Access
+
+If you need SSH for troubleshooting:
+
+1. Set `SSH_ENABLED=true` in Dokploy's **Environment** tab
+2. Set `SSH_PUBLIC_KEY` or `SSH_PASSWORD`
+3. In Dokploy's **Ports** settings, add a TCP port mapping:
+   - Host port: `2222` (or any available port)
+   - Container port: `22`
+4. Connect: `ssh coder@your-server-ip -p 2222`
 
 ### Network Note
 
@@ -128,12 +137,9 @@ The `docker-compose.yml` references `dokploy-network` as an external network. Th
 
 [OpenCode Go](https://opencode.ai) ($10/month) provides access to multiple AI models without needing individual API keys.
 
-1. SSH into the container:
-   ```bash
-   ssh coder@your-server -p 2222
-   ```
+1. Access the container (via web UI, remote TUI, or SSH)
 
-2. Start opencode:
+2. Start opencode (if using SSH):
    ```bash
    opencode
    ```
@@ -159,11 +165,16 @@ GOOGLE_API_KEY=AI...
 
 These are passed into the container and opencode will detect them automatically.
 
-## SSH Access
+## Optional SSH Access (Advanced)
+
+SSH is disabled by default. Enable it with one of:
+
+- **SSH-only mode**: `OPENCODE_MODE=ssh` — SSH as the foreground process (no web/serve)
+- **SSH alongside serve/web**: `SSH_ENABLED=true` — starts SSH in the background
 
 ### Key-based Authentication (Recommended)
 
-Set `SSH_PUBLIC_KEY` in your `.env` to the contents of your public key:
+Set `SSH_PUBLIC_KEY` to the contents of your public key:
 
 ```bash
 SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3... user@machine"
@@ -178,7 +189,7 @@ ssh coder@your-server -p 2222
 
 ### Password Authentication
 
-Set `SSH_PASSWORD` in your `.env`:
+Set `SSH_PASSWORD`:
 
 ```bash
 SSH_PASSWORD=your-secure-password
@@ -190,7 +201,7 @@ If both `SSH_PUBLIC_KEY` and `SSH_PASSWORD` are set, both authentication methods
 
 ### No Credentials Set
 
-If neither `SSH_PUBLIC_KEY` nor `SSH_PASSWORD` is configured, the entrypoint generates a random password and prints it to the container logs. Check with:
+If SSH is enabled but neither `SSH_PUBLIC_KEY` nor `SSH_PASSWORD` is configured, the entrypoint generates a random password and prints it to the container logs. Check with:
 
 ```bash
 docker compose logs opencode
@@ -211,7 +222,7 @@ The clone is idempotent — if the directory already exists (from a previous run
 
 ### Manual Cloning
 
-SSH in and clone repos into `~/workspace/`:
+Access the container and clone repos into `~/workspace/`:
 
 ```bash
 cd ~/workspace
@@ -287,7 +298,7 @@ OPENCODE_CONFIG_JSON='{"$schema":"https://opencode.ai/config.json","provider":"a
 
 ### Edit Directly
 
-The config file is persisted in the `coder-home` volume. SSH in and edit it:
+The config file is persisted in the `coder-home` volume. Access the container and edit it:
 
 ```bash
 nano ~/.config/opencode/opencode.json
@@ -354,25 +365,29 @@ On first start (when the `coder-home` volume is empty), the entrypoint copies a 
 
 ### Health Check
 
-The container includes a Docker HEALTHCHECK that verifies the SSH daemon is accepting connections. Docker and Dokploy will report the container as `healthy` once SSH is ready, and will flag it as `unhealthy` if the SSH daemon becomes unresponsive.
+The container includes a Docker HEALTHCHECK that adapts to the active mode:
+- **serve/web**: Checks the HTTP endpoint on the configured port
+- **ssh**: Verifies the SSH daemon is accepting connections
+
+Docker and Dokploy will report the container as `healthy` once the primary service is ready.
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SSH_PUBLIC_KEY` | No* | — | SSH public key for key-based auth |
-| `SSH_PASSWORD` | No* | — | Password for SSH password auth |
-| `SSH_PORT` | No | `2222` | Host port mapped to container SSH |
-| `TZ` | No | `UTC` | Timezone (e.g., `America/New_York`) |
-| `OPENCODE_MODE` | No | `ssh` | Access mode: `ssh`, `web`, or `serve` |
+| `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, or `ssh` |
 | `OPENCODE_PORT` | No | `4096` | Port for web/serve modes |
+| `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
 | `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve |
 | `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve |
+| `SSH_ENABLED` | No | `false` | Start SSH in background for serve/web modes |
+| `SSH_PUBLIC_KEY` | No | — | SSH public key for key-based auth |
+| `SSH_PASSWORD` | No | — | Password for SSH password auth |
+| `TZ` | No | `UTC` | Timezone (e.g., `America/New_York`) |
 | `GIT_REPO_URL` | No | — | Repository URL to clone on startup |
 | `GIT_BRANCH` | No | — | Branch to checkout (default: repo default) |
 | `GIT_USER_NAME` | No | — | Git commit author name |
 | `GIT_USER_EMAIL` | No | — | Git commit author email |
-| `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
 | `OPENCODE_CONFIG_JSON` | No | — | Full opencode config JSON (overrides default) |
 | `ANTHROPIC_API_KEY` | No | — | Anthropic API key |
 | `OPENAI_API_KEY` | No | — | OpenAI API key |
@@ -382,7 +397,7 @@ The container includes a Docker HEALTHCHECK that verifies the SSH daemon is acce
 | `GITEA_URL` | No | — | Gitea instance URL |
 | `GITEA_TOKEN` | No | — | Gitea personal access token |
 
-\* At least one of `SSH_PUBLIC_KEY` or `SSH_PASSWORD` is recommended. If neither is set, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
+SSH credentials (`SSH_PUBLIC_KEY`, `SSH_PASSWORD`) are only relevant when `OPENCODE_MODE=ssh` or `SSH_ENABLED=true`. If SSH is enabled without credentials, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
 
 ## Auto-Update
 
@@ -400,11 +415,12 @@ On startup, the entrypoint validates all configuration before proceeding. Invali
 
 - `OPENCODE_MODE` must be one of `ssh`, `web`, or `serve`
 - `OPENCODE_PORT` must be a number between 1 and 65535
+- `SSH_ENABLED` must be `true` or `false` if set
 - `TZ` must be a valid timezone from the tz database
 - `GITEA_URL` and `GITEA_TOKEN` must both be set or both empty
 - `OPENCODE_CONFIG_JSON` must be valid JSON if set
 - `GIT_REPO_URL` format is checked (warning only)
-- A warning is shown if no SSH authentication method is configured
+- A warning is shown if SSH is enabled but no authentication method is configured
 
 ## Development
 
@@ -435,7 +451,7 @@ make build
 tests/
   test_helper.bash          # Shared setup: sources entrypoint functions
   test_logging.bats         # Tests for log_info, log_warn, log_error
-  test_validate_env.bats    # Tests for all env validation paths (~27 tests)
+  test_validate_env.bats    # Tests for all env validation paths (~33 tests)
 ```
 
 ### CI
@@ -447,25 +463,25 @@ GitHub Actions runs on every push to `main` and on all pull requests:
 
 ## Troubleshooting
 
-### Cannot connect via SSH
+### Web UI / Serve mode not accessible
 
-- Verify the SSH port is exposed: `docker compose ps` should show `0.0.0.0:2222->22/tcp`
+- Verify the container is running: `docker compose ps`
 - Check container logs: `docker compose logs opencode`
-- Ensure your firewall allows the SSH port
-- On Dokploy, confirm the port is configured in the Ports settings
-
-### Web UI not accessible
-
-- Verify `OPENCODE_MODE=web` is set in your `.env`
-- Check the port is exposed: `docker compose ps` should show `0.0.0.0:4096->4096/tcp`
-- Check container logs: `docker compose logs opencode`
-- Ensure your firewall allows port 4096 (or your custom `OPENCODE_PORT`)
+- On Dokploy, confirm a domain is configured pointing to the container's port 4096
+- If auth is enabled, ensure `OPENCODE_SERVER_PASSWORD` is set correctly
 
 ### Cannot attach remote TUI
 
-- Verify `OPENCODE_MODE=serve` is set
-- Ensure the port is reachable from your local machine
+- The default mode is `serve` — verify the container is running
+- Ensure the port/domain is reachable from your local machine
 - If auth is enabled, set `OPENCODE_SERVER_PASSWORD` on your local machine before running `opencode attach`
+
+### Cannot connect via SSH
+
+- SSH is disabled by default. Ensure `OPENCODE_MODE=ssh` or `SSH_ENABLED=true` is set
+- On Dokploy, confirm a TCP port mapping (e.g., 2222 → 22) is configured in the Ports settings
+- Check container logs: `docker compose logs opencode`
+- Ensure your firewall allows the SSH port
 
 ### "Host key changed" warning after rebuild
 
@@ -491,7 +507,7 @@ ssh-keygen -R "[localhost]:2222"
 ### Container exits immediately
 
 - Check logs: `docker compose logs opencode`
-- Common cause: SSH daemon fails to start. Ensure `/run/sshd` exists (it's created in the Dockerfile)
+- Common cause: opencode binary missing or corrupt. Try setting `OPENCODE_AUTO_UPDATE=true`
 
 ### Git clone fails on startup
 
