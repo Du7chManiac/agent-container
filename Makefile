@@ -16,7 +16,7 @@ install-bats:
 
 # Static analysis with shellcheck
 lint:
-	$(SHELLCHECK) -s bash entrypoint.sh
+	$(SHELLCHECK) -s bash entrypoint.sh healthcheck.sh
 
 # Unit tests (no Docker required)
 test-unit: install-bats

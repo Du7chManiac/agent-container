@@ -78,8 +78,24 @@ validate_env() {
         fi
     fi
 
-    # Warn if no auth method configured
-    if [ -z "${SSH_PUBLIC_KEY:-}" ] && [ -z "${SSH_PASSWORD:-}" ]; then
+    # Validate SSH_ENABLED if set
+    if [ -n "${SSH_ENABLED:-}" ]; then
+        case "$SSH_ENABLED" in
+            true|false) ;;
+            *)
+                log_error "Invalid SSH_ENABLED='$SSH_ENABLED'. Must be 'true' or 'false'"
+                errors=$((errors + 1))
+                ;;
+        esac
+    fi
+
+    # Warn if no auth method configured (only when SSH is active)
+    local ssh_needed=false
+    local mode="${OPENCODE_MODE:-serve}"
+    if [ "$mode" = "ssh" ] || [ "${SSH_ENABLED:-false}" = "true" ]; then
+        ssh_needed=true
+    fi
+    if [ "$ssh_needed" = "true" ] && [ -z "${SSH_PUBLIC_KEY:-}" ] && [ -z "${SSH_PASSWORD:-}" ]; then
         log_warn "No SSH_PUBLIC_KEY or SSH_PASSWORD set. A random password will be generated."
     fi
 
@@ -119,53 +135,65 @@ if [ -n "${TZ:-}" ]; then
 fi
 
 # ==============================================================================
-# SSH Host Key Persistence
+# SSH Setup (only when SSH is needed)
 # ==============================================================================
-HOST_KEY_DIR="/etc/ssh/host_keys"
-mkdir -p "$HOST_KEY_DIR"
+OPENCODE_MODE="${OPENCODE_MODE:-serve}"
+SSH_ENABLED="${SSH_ENABLED:-false}"
 
-if [ -f "$HOST_KEY_DIR/ssh_host_ed25519_key" ]; then
-    cp "$HOST_KEY_DIR"/ssh_host_* /etc/ssh/
-    log_info "Restored persisted SSH host keys."
+# Determine if SSH is needed
+SSH_NEEDED=false
+if [ "$OPENCODE_MODE" = "ssh" ] || [ "$SSH_ENABLED" = "true" ]; then
+    SSH_NEEDED=true
+fi
+
+if [ "$SSH_NEEDED" = "true" ]; then
+    # SSH Host Key Persistence
+    HOST_KEY_DIR="/etc/ssh/host_keys"
+    mkdir -p "$HOST_KEY_DIR"
+
+    if [ -f "$HOST_KEY_DIR/ssh_host_ed25519_key" ]; then
+        cp "$HOST_KEY_DIR"/ssh_host_* /etc/ssh/
+        log_info "Restored persisted SSH host keys."
+    else
+        ssh-keygen -A
+        cp /etc/ssh/ssh_host_* "$HOST_KEY_DIR/"
+        log_info "Generated and persisted new SSH host keys."
+    fi
+
+    # SSH Configuration
+    sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+    # Smart password auth: disable when key is provided without password
+    if [ -n "${SSH_PUBLIC_KEY:-}" ] && [ -z "${SSH_PASSWORD:-}" ]; then
+        sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+        log_info "Password authentication disabled (key-only mode)."
+    else
+        sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    fi
+
+    # SSH public key auth
+    if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
+        mkdir -p /home/coder/.ssh
+        echo "$SSH_PUBLIC_KEY" > /home/coder/.ssh/authorized_keys
+        chmod 700 /home/coder/.ssh
+        chmod 600 /home/coder/.ssh/authorized_keys
+        chown -R coder:coder /home/coder/.ssh
+        log_info "SSH public key configured."
+    fi
+
+    # SSH password auth
+    if [ -n "${SSH_PASSWORD:-}" ]; then
+        echo "coder:$SSH_PASSWORD" | chpasswd
+        log_info "SSH password configured for user 'coder'."
+    elif [ -z "${SSH_PUBLIC_KEY:-}" ]; then
+        GENERATED_PW=$(openssl rand -base64 16)
+        echo "coder:$GENERATED_PW" | chpasswd
+        log_warn "No SSH_PUBLIC_KEY or SSH_PASSWORD set."
+        log_warn "Generated password for 'coder': $GENERATED_PW"
+    fi
 else
-    ssh-keygen -A
-    cp /etc/ssh/ssh_host_* "$HOST_KEY_DIR/"
-    log_info "Generated and persisted new SSH host keys."
-fi
-
-# ==============================================================================
-# SSH Configuration
-# ==============================================================================
-sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-
-# Smart password auth: disable when key is provided without password
-if [ -n "${SSH_PUBLIC_KEY:-}" ] && [ -z "${SSH_PASSWORD:-}" ]; then
-    sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-    log_info "Password authentication disabled (key-only mode)."
-else
-    sed -i 's/#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-fi
-
-# SSH public key auth
-if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
-    mkdir -p /home/coder/.ssh
-    echo "$SSH_PUBLIC_KEY" > /home/coder/.ssh/authorized_keys
-    chmod 700 /home/coder/.ssh
-    chmod 600 /home/coder/.ssh/authorized_keys
-    chown -R coder:coder /home/coder/.ssh
-    log_info "SSH public key configured."
-fi
-
-# SSH password auth
-if [ -n "${SSH_PASSWORD:-}" ]; then
-    echo "coder:$SSH_PASSWORD" | chpasswd
-    log_info "SSH password configured for user 'coder'."
-elif [ -z "${SSH_PUBLIC_KEY:-}" ]; then
-    GENERATED_PW=$(openssl rand -base64 16)
-    echo "coder:$GENERATED_PW" | chpasswd
-    log_warn "No SSH_PUBLIC_KEY or SSH_PASSWORD set."
-    log_warn "Generated password for 'coder': $GENERATED_PW"
+    log_info "SSH disabled. Set OPENCODE_MODE=ssh or SSH_ENABLED=true to enable."
 fi
 
 # ==============================================================================
@@ -298,25 +326,28 @@ fi
 # ==============================================================================
 # Start Services
 # ==============================================================================
-OPENCODE_MODE="${OPENCODE_MODE:-ssh}"
 OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 
 case "$OPENCODE_MODE" in
-    web)
-        log_info "Starting SSH server in background..."
-        /usr/sbin/sshd -e
-        SSHD_PID=$!
-        log_info "Starting opencode web UI on port $OPENCODE_PORT..."
-        exec su - coder -c "opencode web --port $OPENCODE_PORT --hostname 0.0.0.0"
-        ;;
     serve)
-        log_info "Starting SSH server in background..."
-        /usr/sbin/sshd -e
-        SSHD_PID=$!
+        if [ "$SSH_ENABLED" = "true" ]; then
+            log_info "Starting SSH server in background..."
+            /usr/sbin/sshd -e
+            SSHD_PID=$!
+        fi
         log_info "Starting opencode server on port $OPENCODE_PORT..."
         exec su - coder -c "opencode serve --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
-    ssh|*)
+    web)
+        if [ "$SSH_ENABLED" = "true" ]; then
+            log_info "Starting SSH server in background..."
+            /usr/sbin/sshd -e
+            SSHD_PID=$!
+        fi
+        log_info "Starting opencode web UI on port $OPENCODE_PORT..."
+        exec su - coder -c "opencode web --port $OPENCODE_PORT --hostname 0.0.0.0"
+        ;;
+    ssh)
         log_info "Starting SSH server on port 22..."
         exec /usr/sbin/sshd -D -e
         ;;
