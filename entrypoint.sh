@@ -346,6 +346,19 @@ fi
 # ==============================================================================
 OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 
+# Forward API keys and server config to the opencode process.
+# su - coder drops all env vars, so we write them to a temp file that gets sourced.
+OPENCODE_ENV_FILE="/tmp/opencode.env"
+: > "$OPENCODE_ENV_FILE"
+while IFS='=' read -r key val; do
+    case "$key" in
+        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*)
+            printf 'export %s=%q\n' "$key" "$val" >> "$OPENCODE_ENV_FILE"
+            ;;
+    esac
+done < <(env)
+chmod 600 "$OPENCODE_ENV_FILE"
+
 case "$OPENCODE_MODE" in
     serve)
         if [ "$SSH_ENABLED" = "true" ]; then
@@ -354,7 +367,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode server on port $OPENCODE_PORT..."
-        exec su - coder -c "$OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "source /tmp/opencode.env && $OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     web)
         if [ "$SSH_ENABLED" = "true" ]; then
@@ -363,7 +376,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode web UI on port $OPENCODE_PORT..."
-        exec su - coder -c "$OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "source /tmp/opencode.env && $OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     ssh)
         log_info "Starting SSH server on port 22..."
