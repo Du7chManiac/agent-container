@@ -289,7 +289,7 @@ if [ -n "${GITEA_URL:-}" ] && [ -n "${GITEA_TOKEN:-}" ]; then
         --arg token "$GITEA_TOKEN" \
         '{
             "type": "local",
-            "command": ["gitea-mcp", "-t", "stdio"],
+            "command": ["/usr/local/bin/gitea-mcp", "-t", "stdio"],
             "enabled": true,
             "environment": {
                 "GITEA_HOST": $host,
@@ -347,18 +347,23 @@ fi
 OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 
 # Forward API keys and server config to the opencode process.
-# su - coder drops all env vars, so we write them to a temp file that gets sourced.
-OPENCODE_ENV_FILE="/tmp/opencode.env"
+# su - coder starts a login shell that auto-sources /etc/profile.d/*.sh
+OPENCODE_ENV_FILE="/etc/profile.d/opencode-env.sh"
 : > "$OPENCODE_ENV_FILE"
 while IFS='=' read -r key val; do
     case "$key" in
-        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*)
+        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*|GROQ_*|GITHUB_TOKEN|AWS_*|AZURE_*)
             printf 'export %s=%q\n' "$key" "$val" >> "$OPENCODE_ENV_FILE"
             ;;
     esac
 done < <(env)
-chown coder:coder "$OPENCODE_ENV_FILE"
-chmod 600 "$OPENCODE_ENV_FILE"
+chmod 644 "$OPENCODE_ENV_FILE"
+
+if [ -s "$OPENCODE_ENV_FILE" ]; then
+    log_info "Forwarded env vars: $(grep -oP '(?<=export )\w+' "$OPENCODE_ENV_FILE" | tr '\n' ' ')"
+else
+    log_warn "No API keys or server config env vars found to forward."
+fi
 
 case "$OPENCODE_MODE" in
     serve)
@@ -368,7 +373,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode server on port $OPENCODE_PORT..."
-        exec su - coder -c "source /tmp/opencode.env && $OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "$OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     web)
         if [ "$SSH_ENABLED" = "true" ]; then
@@ -377,7 +382,7 @@ case "$OPENCODE_MODE" in
             SSHD_PID=$!
         fi
         log_info "Starting opencode web UI on port $OPENCODE_PORT..."
-        exec su - coder -c "source /tmp/opencode.env && $OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
+        exec su - coder -c "$OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     ssh)
         log_info "Starting SSH server on port 22..."
