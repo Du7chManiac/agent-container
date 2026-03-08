@@ -125,6 +125,14 @@ if [ ! -f /home/coder/.initialized ]; then
     log_info "Initialized home directory from skeleton."
 fi
 
+# Ensure opencode binary exists (may be missing if volume predates image)
+if [ ! -x /home/coder/.local/bin/opencode ] && [ -x /etc/skel.coder/.local/bin/opencode ]; then
+    mkdir -p /home/coder/.local/bin
+    cp -a /etc/skel.coder/.local/bin/opencode /home/coder/.local/bin/opencode
+    chown coder:coder /home/coder/.local/bin/opencode
+    log_info "Restored opencode binary from skeleton."
+fi
+
 # ==============================================================================
 # Timezone
 # ==============================================================================
