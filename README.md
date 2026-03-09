@@ -63,9 +63,7 @@ https://your-domain.example.com
 OPENCODE_MODE=ssh
 ```
 
-Traditional SSH access. Connect via SSH and run `opencode` interactively in your terminal. This mode is useful for troubleshooting or when you prefer a direct terminal connection.
-
-> **Tip:** You can also enable SSH alongside serve/web modes by setting `SSH_ENABLED=true`. See [Optional SSH Access](#optional-ssh-access-advanced).
+Traditional SSH access — connect via SSH and run `opencode` interactively. See [SSH Access](#ssh-access) for setup details.
 
 ### Authentication for Web/Serve Modes
 
@@ -118,14 +116,7 @@ OPENCODE_PORT=8080
 
 ### Optional: Enable SSH Access
 
-If you need SSH for troubleshooting:
-
-1. Set `SSH_ENABLED=true` in Dokploy's **Environment** tab
-2. Set `SSH_PUBLIC_KEY` or `SSH_PASSWORD`
-3. In Dokploy's **Ports** settings, add a TCP port mapping:
-   - Host port: `2222` (or any available port)
-   - Container port: `22`
-4. Connect: `ssh coder@your-server-ip -p 2222`
+For Dokploy, add a TCP port mapping in the **Ports** settings (e.g., host `2222` → container `22`). See [SSH Access](#ssh-access) for full setup.
 
 ### Network Note
 
@@ -165,12 +156,18 @@ GOOGLE_API_KEY=AI...
 
 These are passed into the container and opencode will detect them automatically.
 
-## Optional SSH Access (Advanced)
+## SSH Access
 
-SSH is disabled by default. Enable it with one of:
+SSH is disabled by default. There are two ways to enable it:
 
-- **SSH-only mode**: `OPENCODE_MODE=ssh` — SSH as the foreground process (no web/serve)
-- **SSH alongside serve/web**: `SSH_ENABLED=true` — starts SSH in the background
+- **SSH-only mode**: Set `OPENCODE_MODE=ssh` — SSH runs as the foreground process (no web/serve)
+- **SSH alongside serve/web**: Set `SSH_ENABLED=true` — starts SSH in the background alongside the primary mode
+
+The default SSH port mapping is `2222` on the host (configurable via `SSH_PORT`). Connect with:
+
+```bash
+ssh coder@your-server -p 2222
+```
 
 ### Key-based Authentication (Recommended)
 
@@ -271,7 +268,7 @@ With the Gitea MCP server, the AI agent can:
 - Search code across repositories
 - Manage organizations and teams
 
-## Customizing OpenCode Config
+## OpenCode Config
 
 ### Default Config
 
@@ -393,11 +390,13 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENAI_API_KEY` | No | — | OpenAI API key |
 | `GOOGLE_API_KEY` | No | — | Google Gemini API key |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
+| `GROQ_API_KEY` | No | — | Groq API key |
 | `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI |
 | `GITEA_URL` | No | — | Gitea instance URL |
 | `GITEA_TOKEN` | No | — | Gitea personal access token |
+| `SSH_PORT` | No | `2222` | Host port mapped to container SSH port 22 |
 
-SSH credentials (`SSH_PUBLIC_KEY`, `SSH_PASSWORD`) are only relevant when `OPENCODE_MODE=ssh` or `SSH_ENABLED=true`. If SSH is enabled without credentials, a random password is generated and logged. When only `SSH_PUBLIC_KEY` is set, password authentication is disabled automatically.
+> **Note:** Environment variables matching `AWS_*` and `AZURE_*` patterns are also automatically forwarded into the container.
 
 ## Auto-Update
 
@@ -501,7 +500,7 @@ ssh-keygen -R "[localhost]:2222"
 
 ### opencode command not found
 
-- The binary should be at `~/.local/bin/opencode`. Check with: `ls -la ~/.local/bin/`
+- The binary should be at `~/.opencode/bin/opencode`. Check with: `ls -la ~/.opencode/bin/`
 - If missing, reinstall: `curl -fsSL https://opencode.ai/install | bash`
 
 ### Container exits immediately
@@ -524,6 +523,4 @@ ssh-keygen -R "[localhost]:2222"
 
 ### Dokploy network not found
 
-If you see an error about `dokploy-network`:
-- Running on Dokploy: The network should exist automatically. Try redeploying.
-- Running standalone: Create it manually (`docker network create dokploy-network`) or remove the `networks` section from `docker-compose.yml`.
+See [Network Note](#network-note) under Dokploy Deployment.
