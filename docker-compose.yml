@@ -7,6 +7,34 @@ services:
     ports:
       - "${SSH_PORT:-2222}:22"
       - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
+    environment:
+      # Container config
+      - OPENCODE_MODE=${OPENCODE_MODE:-serve}
+      - OPENCODE_PORT=${OPENCODE_PORT:-4096}
+      - OPENCODE_AUTO_UPDATE=${OPENCODE_AUTO_UPDATE:-false}
+      - OPENCODE_CONFIG_JSON=${OPENCODE_CONFIG_JSON:-}
+      - TZ=${TZ:-}
+      # SSH
+      - SSH_ENABLED=${SSH_ENABLED:-false}
+      - SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY:-}
+      - SSH_PASSWORD=${SSH_PASSWORD:-}
+      # Git
+      - GIT_REPO_URL=${GIT_REPO_URL:-}
+      - GIT_BRANCH=${GIT_BRANCH:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
+      # Gitea MCP
+      - GITEA_URL=${GITEA_URL:-}
+      - GITEA_TOKEN=${GITEA_TOKEN:-}
+      # Server auth
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
+      # AI provider API keys (forwarded to opencode via /etc/profile.d/)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
     volumes:
       - coder-home:/home/coder
       - ssh-host-keys:/etc/ssh/host_keys
