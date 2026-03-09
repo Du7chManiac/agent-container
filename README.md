@@ -74,7 +74,9 @@ OPENCODE_SERVER_PASSWORD=your-secure-password
 OPENCODE_SERVER_USERNAME=opencode   # optional, defaults to "opencode"
 ```
 
-These env vars are read directly by opencode. When set, browsers will show a native login dialog and `opencode attach` clients should set `OPENCODE_SERVER_PASSWORD` locally.
+These env vars are read directly by opencode. When set, browsers will show a native login dialog.
+
+> **Known limitation:** The `opencode attach` CLI does not currently support password authentication. Setting `OPENCODE_SERVER_PASSWORD` on the client side or passing `-p` has no effect — the CLI does not send credentials as HTTP Basic Auth headers. This is tracked upstream in [opencode#8458](https://github.com/anomalyco/opencode/issues/8458) and in [#14](https://github.com/Du7chManiac/agent-container/issues/14). If you need remote TUI access, either disable password protection and rely on network-level security (e.g., Tailscale VPN), or use **web mode** where the browser handles Basic Auth natively.
 
 ### Port Configuration
 
@@ -473,7 +475,7 @@ GitHub Actions runs on every push to `main` and on all pull requests:
 
 - The default mode is `serve` — verify the container is running
 - Ensure the port/domain is reachable from your local machine
-- If auth is enabled, set `OPENCODE_SERVER_PASSWORD` on your local machine before running `opencode attach`
+- **If password auth is enabled**, `opencode attach` will fail with `404 page not found`. The CLI does not support sending Basic Auth credentials yet ([upstream issue](https://github.com/anomalyco/opencode/issues/8458)). Workaround: disable `OPENCODE_SERVER_PASSWORD` and use network-level access control (e.g., Tailscale), or switch to web mode
 
 ### Cannot connect via SSH
 
