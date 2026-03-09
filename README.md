@@ -99,7 +99,7 @@ OPENCODE_PORT=8080
    - For `OPENCODE_CONFIG_JSON`, paste the JSON as a single line
 
 3. **Configure domain** — In Dokploy's **Domains** settings:
-   - Add a domain (e.g., `opencode.maurissen.xyz`)
+   - Add a domain (e.g., `opencode.example.com`)
    - Set the container port to `4096` (or your custom `OPENCODE_PORT`)
    - Traefik handles SSL termination and HTTP routing automatically
 
@@ -108,10 +108,10 @@ OPENCODE_PORT=8080
 5. **Connect**:
    ```bash
    # Browser (web mode)
-   https://opencode.maurissen.xyz
+   https://opencode.example.com
 
    # Remote TUI (serve mode — default)
-   opencode attach https://opencode.maurissen.xyz
+   opencode attach https://opencode.example.com
    ```
 
 ### Optional: Enable SSH Access
