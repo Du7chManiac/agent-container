@@ -4,3 +4,4 @@
 id_rsa*
 auth.json
 tests/bats/
+CLAUDE.md
