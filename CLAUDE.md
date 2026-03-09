@@ -4,6 +4,8 @@
 
 Docker container packaging the [OpenCode](https://opencode.ai) AI coding agent for deployment on [Dokploy](https://dokploy.com) or any Docker host. Default mode is `serve` (HTTP API). SSH is optional via `SSH_ENABLED=true` or `OPENCODE_MODE=ssh`.
 
+**Repository:** Hosted on GitHub (not Gitea). Use `gh` CLI for PRs, issues, and releases.
+
 ## Key Files
 
 - `entrypoint.sh` — Main initialization script. Validates env vars, conditionally configures SSH, sets up OpenCode config, handles auto-update, clones repos, and starts services.
