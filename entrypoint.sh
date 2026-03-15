@@ -145,6 +145,17 @@ if [ ! -x "$OPENCODE_BIN" ]; then
 fi
 
 # ==============================================================================
+# npm Configuration (for volume-mounted homes that predate image changes)
+# ==============================================================================
+if [ ! -f /home/coder/.npm-initialized ]; then
+    su - coder -c "npm config set fetch-timeout 300000"
+    su - coder -c "npm config set fetch-retries 5"
+    touch /home/coder/.npm-initialized
+    chown coder:coder /home/coder/.npm-initialized
+    log_info "npm configuration initialized for container environment."
+fi
+
+# ==============================================================================
 # Timezone
 # ==============================================================================
 if [ -n "${TZ:-}" ]; then

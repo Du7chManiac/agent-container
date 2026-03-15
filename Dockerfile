@@ -20,6 +20,29 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Native development libraries for common npm packages
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libsqlite3-dev \
+    libpq-dev \
+    libcairo2-dev \
+    libjpeg-dev \
+    libpango1.0-dev \
+    libgif-dev \
+    librsvg2-dev \
+    libpixman-1-dev \
+    libxml2-dev \
+    libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Global npm tools and configuration
+RUN npm install -g node-gyp yarn pnpm \
+    && npm cache clean --force \
+    && npm config -g set fetch-timeout 300000 \
+    && npm config -g set fetch-retries 5 \
+    && npm config -g set fetch-retry-mintimeout 15000 \
+    && npm config -g set fetch-retry-maxtimeout 120000
+
 # GitHub CLI
 RUN mkdir -p -m 755 /etc/apt/keyrings \
     && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
