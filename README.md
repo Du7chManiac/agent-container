@@ -332,7 +332,12 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea MCP** | Latest | Official Go binary, auto-configured via env vars |
+| **node-gyp** | Latest | Native addon build tool (global) |
+| **yarn** | Latest | Alternative package manager (global) |
+| **pnpm** | Latest | Fast, disk-efficient package manager (global) |
 | **build-essential** | System | gcc, g++, make |
+| **pkg-config** | System | Library compile/link flag helper |
+| **Native dev libs** | System | libsqlite3, libpq, libcairo2, libjpeg, libpango, libgif, librsvg2, libpixman, libxml2, libcurl |
 | **ripgrep (rg)** | System | Fast file search |
 | **fd-find (fd)** | System | Fast file finder |
 | **jq** | System | JSON processor |
