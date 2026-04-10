@@ -33,9 +33,9 @@ validate_env() {
     # Validate OPENCODE_MODE
     if [ -n "${OPENCODE_MODE:-}" ]; then
         case "$OPENCODE_MODE" in
-            ssh|web|serve) ;;
+            ssh|web|serve|openchamber) ;;
             *)
-                log_error "Invalid OPENCODE_MODE='$OPENCODE_MODE'. Must be one of: ssh, web, serve"
+                log_error "Invalid OPENCODE_MODE='$OPENCODE_MODE'. Must be one of: ssh, web, serve, openchamber"
                 errors=$((errors + 1))
                 ;;
         esac
@@ -97,6 +97,16 @@ validate_env() {
     fi
     if [ "$ssh_needed" = "true" ] && [ -z "${SSH_PUBLIC_KEY:-}" ] && [ -z "${SSH_PASSWORD:-}" ]; then
         log_warn "No SSH_PUBLIC_KEY or SSH_PASSWORD set. A random password will be generated."
+    fi
+
+    # OpenChamber-specific warnings
+    if [ "$mode" = "openchamber" ]; then
+        if [ -z "${OPENCHAMBER_UI_PASSWORD:-}" ]; then
+            log_warn "OPENCODE_MODE=openchamber but OPENCHAMBER_UI_PASSWORD is unset — UI will be unprotected."
+        fi
+        if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+            log_warn "OPENCODE_SERVER_PASSWORD is ignored in openchamber mode — use OPENCHAMBER_UI_PASSWORD instead."
+        fi
     fi
 
     if [ $errors -gt 0 ]; then
@@ -398,5 +408,41 @@ case "$OPENCODE_MODE" in
     ssh)
         log_info "Starting SSH server on port 22..."
         exec /usr/sbin/sshd -D -e
+        ;;
+    openchamber)
+        if [ "$SSH_ENABLED" = "true" ]; then
+            log_info "Starting SSH server in background..."
+            /usr/sbin/sshd -e
+            SSHD_PID=$!
+        fi
+        log_info "Starting OpenChamber web UI on port $OPENCODE_PORT..."
+
+        # OpenChamber spawns its own opencode subprocess. Give the subprocess
+        # a different internal port so it doesn't collide with OpenChamber's
+        # own --port. The subprocess port is not exposed outside the container.
+        OC_INTERNAL_PORT=4097
+        if [ "$OPENCODE_PORT" = "$OC_INTERNAL_PORT" ]; then
+            OC_INTERNAL_PORT=4098
+        fi
+
+        # Forward to the openchamber process and the opencode it spawns.
+        # Appended to the same env file sourced by su - coder's login shell.
+        {
+            printf 'export OPENCODE_PORT=%s\n' "$OC_INTERNAL_PORT"
+            printf 'export OPENCHAMBER_OPENCODE_HOSTNAME=%s\n' "127.0.0.1"
+        } >> "$OPENCODE_ENV_FILE"
+
+        # Shell-escape the password to handle special chars safely
+        if [ -n "${OPENCHAMBER_UI_PASSWORD:-}" ]; then
+            ESCAPED_PW=$(printf %q "$OPENCHAMBER_UI_PASSWORD")
+            OPENCHAMBER_CMD="openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground --ui-password $ESCAPED_PW"
+        else
+            log_warn "Starting OpenChamber without --ui-password. UI is unprotected."
+            OPENCHAMBER_CMD="openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground"
+        fi
+
+        # --foreground is mandatory: Docker PID 1 must stay alive. Without it,
+        # openchamber daemonizes, su -c returns, and the container exits.
+        exec su - coder -c "$OPENCHAMBER_CMD"
         ;;
 esac

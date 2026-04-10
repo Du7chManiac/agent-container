@@ -43,6 +43,10 @@ RUN npm install -g node-gyp yarn pnpm \
     && npm config -g set fetch-retry-mintimeout 15000 \
     && npm config -g set fetch-retry-maxtimeout 120000
 
+# OpenChamber web UI (optional alternative to opencode's built-in web — enable via OPENCODE_MODE=openchamber)
+RUN npm install -g @openchamber/web@1.9.4 \
+    && npm cache clean --force
+
 # GitHub CLI
 RUN mkdir -p -m 755 /etc/apt/keyrings \
     && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
