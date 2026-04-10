@@ -76,7 +76,17 @@ OPENCODE_SERVER_USERNAME=opencode   # optional, defaults to "opencode"
 
 These env vars are read directly by opencode. When set, browsers will show a native login dialog.
 
-> **Known limitation:** The `opencode attach` CLI does not currently support password authentication. Setting `OPENCODE_SERVER_PASSWORD` on the client side or passing `-p` has no effect — the CLI does not send credentials as HTTP Basic Auth headers. This is tracked upstream in [opencode#8458](https://github.com/anomalyco/opencode/issues/8458) and in [#14](https://github.com/Du7chManiac/agent-container/issues/14). If you need remote TUI access, either disable password protection and rely on network-level security (e.g., Tailscale VPN), or use **web mode** where the browser handles Basic Auth natively.
+To connect with `opencode attach` when a password is set, pass the credentials via flag or environment variable:
+
+```bash
+# Using the -p / --password flag (and optionally -u / --username):
+opencode attach -p your-secure-password https://your-domain.example.com
+
+# Or set the environment variable on the client side:
+OPENCODE_SERVER_PASSWORD=your-secure-password opencode attach https://your-domain.example.com
+```
+
+> **Note:** Client-side password support for `opencode attach` was added in [opencode#9095](https://github.com/anomalyco/opencode/pull/9095). Make sure you are running a recent version of opencode on your local machine.
 
 ### Port Configuration
 
@@ -480,7 +490,13 @@ GitHub Actions runs on every push to `main` and on all pull requests:
 
 - The default mode is `serve` — verify the container is running
 - Ensure the port/domain is reachable from your local machine
-- **If password auth is enabled**, `opencode attach` will fail with `404 page not found`. The CLI does not support sending Basic Auth credentials yet ([upstream issue](https://github.com/anomalyco/opencode/issues/8458)). Workaround: disable `OPENCODE_SERVER_PASSWORD` and use network-level access control (e.g., Tailscale), or switch to web mode
+- **If password auth is enabled**, pass credentials using the `-p` flag or the `OPENCODE_SERVER_PASSWORD` environment variable on the client side:
+  ```bash
+  opencode attach -p your-secure-password https://your-domain.example.com
+  # or
+  OPENCODE_SERVER_PASSWORD=your-secure-password opencode attach https://your-domain.example.com
+  ```
+  > Client-side auth support was added in [opencode#9095](https://github.com/anomalyco/opencode/pull/9095). Ensure your local opencode is up to date.
 
 ### Cannot connect via SSH
 
