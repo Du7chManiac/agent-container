@@ -74,8 +74,6 @@ Differences from `web` mode:
 
 Under the hood the entrypoint runs `openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground`, and the spawned opencode subprocess binds to a private loopback port (`4097` by default, `4098` if you set `OPENCODE_PORT=4097`).
 
-> **Known upstream compatibility patch:** opencode 1.4+ changed its server-side Basic Auth format to require an **empty username** (`Authorization: Basic base64(:password)`), but `@openchamber/web@1.9.4` still sends `Authorization: Basic base64(opencode:password)`. The result is that OpenChamber's internal health check against the spawned opencode subprocess gets 401 forever and reports `"Server started but health check failed (timeout)"`. The Dockerfile applies a small one-line `sed` patch to OpenChamber's `auth-state-runtime.js` to fix the Basic Auth format. Remove this patch once upstream ships a fixed release — there's a `grep -q` build guard so the image build fails loudly if the target string ever changes.
-
 ### SSH Mode (advanced)
 
 ```bash
