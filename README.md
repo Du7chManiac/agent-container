@@ -62,6 +62,7 @@ https://your-domain.example.com
 ```bash
 OPENCODE_MODE=openchamber
 OPENCHAMBER_UI_PASSWORD=your-secure-password
+OPENCHAMBER_PUBLIC_ORIGIN=https://opencode.example.com  # required behind a reverse proxy
 ```
 
 Starts [OpenChamber](https://github.com/openchamber/openchamber) — a "control room" web UI around opencode with branching sessions, diff review, terminal management, and tool progress tracking. OpenChamber manages its own opencode subprocess internally and exposes only the OpenChamber UI on `OPENCODE_PORT` (default `4096`), so it's a drop-in swap for `web` mode from the port-mapping perspective.
@@ -71,6 +72,7 @@ Differences from `web` mode:
 - **Auth:** OpenChamber uses a single shared UI password set via `OPENCHAMBER_UI_PASSWORD` (not HTTP Basic Auth). `OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_USERNAME` are **ignored** in this mode — the entrypoint logs a warning if you set them.
 - **No `opencode attach`:** Because OpenChamber manages opencode internally (on a private port), the external REST API is not exposed, so the `opencode attach` remote TUI client cannot connect. If you need remote TUI access, stay on `serve` mode.
 - **Unprotected without a password:** If `OPENCHAMBER_UI_PASSWORD` is unset, the container still starts (matching the existing "SSH with no auth" behavior) but logs a prominent warning. Only do this on trusted networks (e.g., behind Tailscale).
+- **Reverse proxy:** OpenChamber's terminal WebSocket has a strict origin check. When the container is behind Traefik, nginx, etc., set `OPENCHAMBER_PUBLIC_ORIGIN` to the externally-visible origin (e.g. `https://opencode.example.com`, no path). The entrypoint seeds it into `settings.json` before OpenChamber starts. Without it, the UI loads but terminals fail with *"Connection failed: Terminal stream connection error"*.
 
 Under the hood the entrypoint runs `openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground`, and the spawned opencode subprocess binds to a private loopback port (`4097` by default, `4098` if you set `OPENCODE_PORT=4097`).
 
@@ -403,6 +405,7 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve (ignored in openchamber mode) |
 | `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve (ignored in openchamber mode) |
 | `OPENCHAMBER_UI_PASSWORD` | No | — | UI password for OpenChamber mode (shared, no username) |
+| `OPENCHAMBER_PUBLIC_ORIGIN` | No (but required behind a reverse proxy) | — | Public origin (`https://host[:port]`) for OpenChamber mode. Seeded into `settings.json` so the terminal WebSocket's origin check accepts requests proxied through Traefik/nginx |
 | `SSH_ENABLED` | No | `false` | Start SSH in background for serve/web modes |
 | `SSH_PUBLIC_KEY` | No | — | SSH public key for key-based auth |
 | `SSH_PASSWORD` | No | — | Password for SSH password auth |

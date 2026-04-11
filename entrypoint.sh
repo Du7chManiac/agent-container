@@ -112,6 +112,17 @@ validate_env() {
         fi
     fi
 
+    # OPENCHAMBER_PUBLIC_ORIGIN: scheme://host[:port], no path. Seeded into
+    # settings.json so OpenChamber's WebSocket origin check accepts requests
+    # proxied through Traefik/etc. (The server only allows origins it can
+    # derive from X-Forwarded-* headers plus whatever is in settings.publicOrigin.)
+    if [ -n "${OPENCHAMBER_PUBLIC_ORIGIN:-}" ]; then
+        if ! echo "$OPENCHAMBER_PUBLIC_ORIGIN" | grep -qE '^https?://[^/[:space:]]+/?$'; then
+            log_error "Invalid OPENCHAMBER_PUBLIC_ORIGIN='$OPENCHAMBER_PUBLIC_ORIGIN'. Must be scheme://host[:port] with no path, e.g. https://example.com"
+            errors=$((errors + 1))
+        fi
+    fi
+
     if [ $errors -gt 0 ]; then
         log_error "Found $errors configuration error(s). Aborting startup."
         exit 1
@@ -426,6 +437,36 @@ case "$OPENCODE_MODE" in
         OC_INTERNAL_PORT=4097
         if [ "$OPENCODE_PORT" = "$OC_INTERNAL_PORT" ]; then
             OC_INTERNAL_PORT=4098
+        fi
+
+        # Seed OPENCHAMBER_PUBLIC_ORIGIN into settings.json before OpenChamber
+        # starts and loads its settings into memory. OpenChamber's WebSocket
+        # origin check (used by the terminal stream) allows origins derived from
+        # X-Forwarded-* headers and from settings.publicOrigin. When settings
+        # are read fresh from disk on each upgrade, the seeded value is picked
+        # up; but OpenChamber's in-memory persist pipeline does not re-read
+        # disk, so any write must happen before startup to survive later saves.
+        if [ -n "${OPENCHAMBER_PUBLIC_ORIGIN:-}" ]; then
+            OC_SETTINGS_DIR="/home/coder/.config/openchamber"
+            OC_SETTINGS_FILE="${OC_SETTINGS_DIR}/settings.json"
+            # Strip any trailing slash to match the URL.origin format OpenChamber
+            # compares against (it runs the value through `new URL(...).origin`).
+            NORMALIZED_ORIGIN="${OPENCHAMBER_PUBLIC_ORIGIN%/}"
+            mkdir -p "$OC_SETTINGS_DIR"
+            if [ -f "$OC_SETTINGS_FILE" ]; then
+                if jq --arg origin "$NORMALIZED_ORIGIN" '.publicOrigin = $origin' \
+                    "$OC_SETTINGS_FILE" > "${OC_SETTINGS_FILE}.tmp" 2>/dev/null; then
+                    mv "${OC_SETTINGS_FILE}.tmp" "$OC_SETTINGS_FILE"
+                    log_info "Seeded publicOrigin=$NORMALIZED_ORIGIN into existing OpenChamber settings."
+                else
+                    rm -f "${OC_SETTINGS_FILE}.tmp"
+                    log_warn "Failed to merge publicOrigin into $OC_SETTINGS_FILE — file may be malformed. Skipping seed."
+                fi
+            else
+                jq -n --arg origin "$NORMALIZED_ORIGIN" '{publicOrigin: $origin}' > "$OC_SETTINGS_FILE"
+                log_info "Created OpenChamber settings with publicOrigin=$NORMALIZED_ORIGIN."
+            fi
+            chown -R coder:coder "$OC_SETTINGS_DIR"
         fi
 
         # Strip OPENCODE_SERVER_{PASSWORD,USERNAME} from the forwarded env file.

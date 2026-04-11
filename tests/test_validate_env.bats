@@ -7,6 +7,7 @@ setup() {
     unset GITEA_URL GITEA_TOKEN OPENCODE_CONFIG_JSON
     unset SSH_PUBLIC_KEY SSH_PASSWORD SSH_ENABLED
     unset OPENCHAMBER_UI_PASSWORD OPENCODE_SERVER_PASSWORD OPENCODE_SERVER_USERNAME
+    unset OPENCHAMBER_PUBLIC_ORIGIN
 }
 
 teardown() {
@@ -286,6 +287,53 @@ teardown() {
     run validate_env
     [ "$status" -eq 0 ]
     [[ "$output" != *"UI will be unprotected"* ]]
+}
+
+# --- OPENCHAMBER_PUBLIC_ORIGIN validation ---
+
+@test "validate_env: accepts https OPENCHAMBER_PUBLIC_ORIGIN" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=https://opencode.example.com
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: accepts http OPENCHAMBER_PUBLIC_ORIGIN with port" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=http://localhost:4096
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: accepts OPENCHAMBER_PUBLIC_ORIGIN with trailing slash" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=https://opencode.example.com/
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: rejects OPENCHAMBER_PUBLIC_ORIGIN with path" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=https://opencode.example.com/foo
+    run validate_env
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid OPENCHAMBER_PUBLIC_ORIGIN"* ]]
+}
+
+@test "validate_env: rejects OPENCHAMBER_PUBLIC_ORIGIN without scheme" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=opencode.example.com
+    run validate_env
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid OPENCHAMBER_PUBLIC_ORIGIN"* ]]
+}
+
+@test "validate_env: rejects empty-host OPENCHAMBER_PUBLIC_ORIGIN" {
+    export OPENCHAMBER_PUBLIC_ORIGIN=https://
+    run validate_env
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid OPENCHAMBER_PUBLIC_ORIGIN"* ]]
+}
+
+@test "validate_env: accepts unset OPENCHAMBER_PUBLIC_ORIGIN" {
+    unset OPENCHAMBER_PUBLIC_ORIGIN
+    run validate_env
+    [ "$status" -eq 0 ]
 }
 
 # --- Multiple errors accumulate ---
