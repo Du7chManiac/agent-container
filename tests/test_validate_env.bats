@@ -6,6 +6,7 @@ setup() {
     unset OPENCODE_MODE OPENCODE_PORT TZ GIT_REPO_URL
     unset GITEA_URL GITEA_TOKEN OPENCODE_CONFIG_JSON
     unset SSH_PUBLIC_KEY SSH_PASSWORD SSH_ENABLED
+    unset OPENCHAMBER_UI_PASSWORD OPENCODE_SERVER_PASSWORD OPENCODE_SERVER_USERNAME
 }
 
 teardown() {
@@ -28,6 +29,13 @@ teardown() {
 
 @test "validate_env: accepts OPENCODE_MODE=serve" {
     export OPENCODE_MODE=serve
+    run validate_env
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_env: accepts OPENCODE_MODE=openchamber" {
+    export OPENCODE_MODE=openchamber
+    export OPENCHAMBER_UI_PASSWORD=secret
     run validate_env
     [ "$status" -eq 0 ]
 }
@@ -243,6 +251,41 @@ teardown() {
     run validate_env
     [ "$status" -eq 0 ]
     [[ "$output" != *"random password"* ]]
+}
+
+# --- OpenChamber mode warnings ---
+
+@test "validate_env: warns when openchamber mode has no UI password" {
+    export OPENCODE_MODE=openchamber
+    unset OPENCHAMBER_UI_PASSWORD
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"UI will be unprotected"* ]]
+}
+
+@test "validate_env: warns when OPENCODE_SERVER_PASSWORD set in openchamber mode" {
+    export OPENCODE_MODE=openchamber
+    export OPENCODE_SERVER_PASSWORD=foo
+    export OPENCHAMBER_UI_PASSWORD=bar
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"OPENCODE_SERVER_PASSWORD is ignored"* ]]
+}
+
+@test "validate_env: warns when OPENCODE_SERVER_USERNAME set in openchamber mode" {
+    export OPENCODE_MODE=openchamber
+    export OPENCODE_SERVER_USERNAME=someuser
+    export OPENCHAMBER_UI_PASSWORD=bar
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"OPENCODE_SERVER_USERNAME is ignored"* ]]
+}
+
+@test "validate_env: no openchamber warning in serve mode" {
+    unset OPENCODE_MODE OPENCHAMBER_UI_PASSWORD
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UI will be unprotected"* ]]
 }
 
 # --- Multiple errors accumulate ---

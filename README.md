@@ -57,6 +57,25 @@ Starts the opencode web UI — a full browser-based interface for interacting wi
 https://your-domain.example.com
 ```
 
+### OpenChamber Mode
+
+```bash
+OPENCODE_MODE=openchamber
+OPENCHAMBER_UI_PASSWORD=your-secure-password
+```
+
+Starts [OpenChamber](https://github.com/openchamber/openchamber) — a "control room" web UI around opencode with branching sessions, diff review, terminal management, and tool progress tracking. OpenChamber manages its own opencode subprocess internally and exposes only the OpenChamber UI on `OPENCODE_PORT` (default `4096`), so it's a drop-in swap for `web` mode from the port-mapping perspective.
+
+Differences from `web` mode:
+
+- **Auth:** OpenChamber uses a single shared UI password set via `OPENCHAMBER_UI_PASSWORD` (not HTTP Basic Auth). `OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_USERNAME` are **ignored** in this mode — the entrypoint logs a warning if you set them.
+- **No `opencode attach`:** Because OpenChamber manages opencode internally (on a private port), the external REST API is not exposed, so the `opencode attach` remote TUI client cannot connect. If you need remote TUI access, stay on `serve` mode.
+- **Unprotected without a password:** If `OPENCHAMBER_UI_PASSWORD` is unset, the container still starts (matching the existing "SSH with no auth" behavior) but logs a prominent warning. Only do this on trusted networks (e.g., behind Tailscale).
+
+Under the hood the entrypoint runs `openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground`, and the spawned opencode subprocess binds to a private loopback port (`4097` by default, `4098` if you set `OPENCODE_PORT=4097`).
+
+> **Known upstream compatibility patch:** opencode 1.4+ changed its server-side Basic Auth format to require an **empty username** (`Authorization: Basic base64(:password)`), but `@openchamber/web@1.9.4` still sends `Authorization: Basic base64(opencode:password)`. The result is that OpenChamber's internal health check against the spawned opencode subprocess gets 401 forever and reports `"Server started but health check failed (timeout)"`. The Dockerfile applies a small one-line `sed` patch to OpenChamber's `auth-state-runtime.js` to fix the Basic Auth format. Remove this patch once upstream ships a fixed release — there's a `grep -q` build guard so the image build fails loudly if the target string ever changes.
+
 ### SSH Mode (advanced)
 
 ```bash
@@ -342,6 +361,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea MCP** | Latest | Official Go binary, auto-configured via env vars |
+| **OpenChamber** | 1.9.4 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber` |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
 | **pnpm** | Latest | Fast, disk-efficient package manager (global) |
@@ -389,11 +409,12 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, or `ssh` |
-| `OPENCODE_PORT` | No | `4096` | Port for web/serve modes |
+| `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, `openchamber`, or `ssh` |
+| `OPENCODE_PORT` | No | `4096` | Port for web/serve/openchamber modes |
 | `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
-| `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve |
-| `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve |
+| `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve (ignored in openchamber mode) |
+| `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve (ignored in openchamber mode) |
+| `OPENCHAMBER_UI_PASSWORD` | No | — | UI password for OpenChamber mode (shared, no username) |
 | `SSH_ENABLED` | No | `false` | Start SSH in background for serve/web modes |
 | `SSH_PUBLIC_KEY` | No | — | SSH public key for key-based auth |
 | `SSH_PASSWORD` | No | — | Password for SSH password auth |
@@ -429,7 +450,7 @@ The update runs before services start. If the update fails (e.g., due to network
 
 On startup, the entrypoint validates all configuration before proceeding. Invalid configuration causes the container to exit immediately with clear error messages instead of failing silently later. The following checks are performed:
 
-- `OPENCODE_MODE` must be one of `ssh`, `web`, or `serve`
+- `OPENCODE_MODE` must be one of `ssh`, `web`, `serve`, or `openchamber`
 - `OPENCODE_PORT` must be a number between 1 and 65535
 - `SSH_ENABLED` must be `true` or `false` if set
 - `TZ` must be a valid timezone from the tz database
@@ -498,6 +519,15 @@ GitHub Actions runs on every push to `main` and on all pull requests:
   ```
   > Client-side auth support was added in [opencode#9095](https://github.com/anomalyco/opencode/pull/9095). Ensure your local opencode is up to date.
 
+### OpenChamber UI not loading
+
+- Confirm `OPENCODE_MODE=openchamber` is set and the container is running
+- Check logs: `docker compose logs opencode` — you should see both `Starting OpenChamber web UI on port …` and the spawned opencode subprocess starting
+- If you set `OPENCODE_SERVER_PASSWORD`, note that it's ignored in this mode — use `OPENCHAMBER_UI_PASSWORD` instead
+- The UI uses a single shared password (no username) — enter just the password at the browser prompt
+- Remember: `opencode attach` does **not** work in openchamber mode because the opencode REST server is bound to internal loopback only. Switch to `serve` mode if you need remote TUI access
+- The internal opencode subprocess binds to port `4097` (or `4098` if your `OPENCODE_PORT=4097`). These ports are not exposed but must be free inside the container
+
 ### Cannot connect via SSH
 
 - SSH is disabled by default. Ensure `OPENCODE_MODE=ssh` or `SSH_ENABLED=true` is set
@@ -547,3 +577,14 @@ ssh-keygen -R "[localhost]:2222"
 ### Dokploy network not found
 
 See [Network Note](#network-note) under Dokploy Deployment.
+
+## Credits
+
+This container bundles and builds on the work of several upstream open-source projects:
+
+- **[opencode](https://opencode.ai)** — the terminal-native AI coding agent that powers every mode of this container.
+- **[OpenChamber](https://github.com/openchamber/openchamber)** by [@btriapitsyn](https://github.com/btriapitsyn) — the "control room" web UI enabled via `OPENCODE_MODE=openchamber`. Distributed as the `@openchamber/web` npm package.
+- **[Gitea MCP](https://gitea.com/gitea/gitea-mcp)** — the official Gitea MCP server for AI agent integration.
+- **[Dokploy](https://dokploy.com)** — the self-hosted PaaS this container is primarily designed to deploy on.
+
+All upstream projects retain their own licenses. This repository's glue code and Docker configuration are MIT-licensed — see [LICENSE](LICENSE).
