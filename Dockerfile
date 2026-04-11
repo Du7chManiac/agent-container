@@ -44,8 +44,16 @@ RUN npm install -g node-gyp yarn pnpm \
     && npm config -g set fetch-retry-maxtimeout 120000
 
 # OpenChamber web UI (optional alternative to opencode's built-in web — enable via OPENCODE_MODE=openchamber)
+# Patches OpenChamber's Basic Auth format from `opencode:<password>` to `:<password>` (empty username)
+# because opencode 1.4+ changed its server auth to only accept empty-username Basic Auth, which
+# breaks OpenChamber <=1.9.4's built-in health check against the spawned opencode subprocess.
+# Remove this patch once upstream ships a fixed release.
+# See: https://github.com/openchamber/openchamber/issues/891
 RUN npm install -g @openchamber/web@1.9.4 \
-    && npm cache clean --force
+    && npm cache clean --force \
+    && sed -i "s|Buffer.from(\`opencode:\${password}\`)|Buffer.from(\`:\${password}\`)|" \
+       /usr/lib/node_modules/@openchamber/web/server/lib/opencode/auth-state-runtime.js \
+    && grep -q 'Buffer.from(`:${password}`)' /usr/lib/node_modules/@openchamber/web/server/lib/opencode/auth-state-runtime.js
 
 # GitHub CLI
 RUN mkdir -p -m 755 /etc/apt/keyrings \
