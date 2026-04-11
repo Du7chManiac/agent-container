@@ -427,9 +427,12 @@ case "$OPENCODE_MODE" in
 
         # Forward to the openchamber process and the opencode it spawns.
         # Appended to the same env file sourced by su - coder's login shell.
+        # OPENCODE_BINARY points at the full opencode path so openchamber
+        # doesn't need to resolve it via PATH (su - may drop user PATH additions).
         {
             printf 'export OPENCODE_PORT=%s\n' "$OC_INTERNAL_PORT"
             printf 'export OPENCHAMBER_OPENCODE_HOSTNAME=%s\n' "127.0.0.1"
+            printf 'export OPENCODE_BINARY=%s\n' "$OPENCODE_BIN"
         } >> "$OPENCODE_ENV_FILE"
 
         # Shell-escape the password to handle special chars safely
