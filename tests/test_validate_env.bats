@@ -6,7 +6,7 @@ setup() {
     unset OPENCODE_MODE OPENCODE_PORT TZ GIT_REPO_URL
     unset GITEA_URL GITEA_TOKEN OPENCODE_CONFIG_JSON
     unset SSH_PUBLIC_KEY SSH_PASSWORD SSH_ENABLED
-    unset OPENCHAMBER_UI_PASSWORD OPENCODE_SERVER_PASSWORD
+    unset OPENCHAMBER_UI_PASSWORD OPENCODE_SERVER_PASSWORD OPENCODE_SERVER_USERNAME
 }
 
 teardown() {
@@ -269,7 +269,16 @@ teardown() {
     export OPENCHAMBER_UI_PASSWORD=bar
     run validate_env
     [ "$status" -eq 0 ]
-    [[ "$output" == *"ignored in openchamber mode"* ]]
+    [[ "$output" == *"OPENCODE_SERVER_PASSWORD is ignored"* ]]
+}
+
+@test "validate_env: warns when OPENCODE_SERVER_USERNAME set in openchamber mode" {
+    export OPENCODE_MODE=openchamber
+    export OPENCODE_SERVER_USERNAME=someuser
+    export OPENCHAMBER_UI_PASSWORD=bar
+    run validate_env
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"OPENCODE_SERVER_USERNAME is ignored"* ]]
 }
 
 @test "validate_env: no openchamber warning in serve mode" {
