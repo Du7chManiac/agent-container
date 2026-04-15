@@ -376,6 +376,18 @@ if [ -n "${GIT_USER_EMAIL:-}" ]; then
     su - coder -c "git config --global user.email '$GIT_USER_EMAIL'"
 fi
 
+# When GITHUB_TOKEN is set, wire gh as git's credential helper for github.com
+# so HTTPS push/fetch work non-interactively inside the terminal. Without
+# this git hits the no-TTY credential prompt and fails with
+# "could not read Username for 'https://github.com'".
+if [ -n "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+    if su - coder -c "GITHUB_TOKEN=$(printf %q "$GITHUB_TOKEN") gh auth setup-git" >/dev/null 2>&1; then
+        log_info "Configured gh as git credential helper for github.com (GITHUB_TOKEN)."
+    else
+        log_warn "gh auth setup-git failed — git push over HTTPS may prompt for credentials."
+    fi
+fi
+
 # ==============================================================================
 # Start Services
 # ==============================================================================
