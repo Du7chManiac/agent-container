@@ -430,7 +430,7 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `GOOGLE_API_KEY` | No | — | Google Gemini API key |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
 | `GROQ_API_KEY` | No | — | Groq API key |
-| `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI |
+| `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI. When set, the entrypoint also runs `gh auth setup-git` so `git push`/`git fetch` over HTTPS work non-interactively from the terminal. |
 | `GITEA_URL` | No | — | Gitea instance URL |
 | `GITEA_TOKEN` | No | — | Gitea personal access token |
 | `SSH_PORT` | No | `2222` | Host port mapped to container SSH port 22 |
@@ -567,6 +567,16 @@ ssh-keygen -R "[localhost]:2222"
 - Verify `GIT_REPO_URL` is accessible from the container
 - For private repos, ensure SSH keys or tokens are configured
 - Check logs for specific git error messages
+
+### `git push` to GitHub fails with "could not read Username"
+
+If `git push https://github.com/...` inside the terminal dies with `fatal: could not read Username for 'https://github.com': No such device or address`, the container wasn't started with `GITHUB_TOKEN`. Set `GITHUB_TOKEN` to a PAT with `repo` scope — the entrypoint runs `gh auth setup-git` on startup so HTTPS git ops use the token non-interactively. You can verify with:
+
+```bash
+docker exec -u coder <container> git config --global --get-regexp credential
+```
+
+It should list a helper entry for `https://github.com`. This also silences OpenChamber's `Failed to filter active remote branches, returning all` warning in the branches panel.
 
 ### Gitea MCP not working
 
