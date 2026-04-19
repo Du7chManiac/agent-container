@@ -43,10 +43,6 @@ RUN npm install -g node-gyp yarn pnpm \
     && npm config -g set fetch-retry-mintimeout 15000 \
     && npm config -g set fetch-retry-maxtimeout 120000
 
-# OpenChamber web UI (optional alternative to opencode's built-in web — enable via OPENCODE_MODE=openchamber)
-RUN npm install -g @openchamber/web@1.9.4 \
-    && npm cache clean --force
-
 # GitHub CLI
 RUN mkdir -p -m 755 /etc/apt/keyrings \
     && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -96,6 +92,16 @@ RUN mkdir -p /etc/skel.coder/.config/opencode \
     && cp -a /home/coder/.opencode/bin/opencode /etc/skel.coder/.opencode/bin/opencode
 RUN cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
     && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
+
+# OpenChamber web UI (optional alternative to opencode's built-in web — enable via OPENCODE_MODE=openchamber).
+# Installed near the bottom of the Dockerfile and gated on CACHEBUST so a redeploy
+# can pull the latest @openchamber/web release without busting the heavier layers
+# above (apt, Node, Go, gh, tea, opencode). Pass --build-arg CACHEBUST=$(date +%s)
+# (or a commit SHA) to force a fresh fetch; otherwise the layer is cached normally.
+ARG CACHEBUST=0
+RUN echo "cachebust=${CACHEBUST}" >/dev/null \
+    && npm install -g @openchamber/web@latest \
+    && npm cache clean --force
 
 COPY entrypoint.sh /entrypoint.sh
 COPY healthcheck.sh /healthcheck.sh

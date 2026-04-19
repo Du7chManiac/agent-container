@@ -366,7 +366,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea CLI (tea)** | 0.11.0 | Pinned prebuilt binary; authenticates via `GITEA_URL` + `GITEA_TOKEN` |
-| **OpenChamber** | 1.9.4 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber` |
+| **OpenChamber** | Latest at build time | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Pinned to `latest`; pass `--build-arg CACHEBUST=$(date +%s)` (or a commit SHA) on rebuild to force a fresh pull |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
 | **pnpm** | Latest | Fast, disk-efficient package manager (global) |
