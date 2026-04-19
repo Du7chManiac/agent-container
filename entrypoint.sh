@@ -315,30 +315,6 @@ if [ -n "${OPENCODE_CONFIG_JSON:-}" ]; then
     log_info "OpenCode config overridden from OPENCODE_CONFIG_JSON env var."
 fi
 
-# ==============================================================================
-# Gitea MCP Server
-# ==============================================================================
-if [ -n "${GITEA_URL:-}" ] && [ -n "${GITEA_TOKEN:-}" ]; then
-    GITEA_MCP_CONFIG=$(jq -n \
-        --arg host "$GITEA_URL" \
-        --arg token "$GITEA_TOKEN" \
-        '{
-            "type": "local",
-            "command": ["/usr/local/bin/gitea-mcp", "-t", "stdio"],
-            "enabled": true,
-            "environment": {
-                "GITEA_HOST": $host,
-                "GITEA_ACCESS_TOKEN": $token
-            }
-        }')
-
-    jq --argjson gitea "$GITEA_MCP_CONFIG" '.mcp.gitea = $gitea' \
-        "$OPENCODE_CONFIG_FILE" > "${OPENCODE_CONFIG_FILE}.tmp" \
-        && mv "${OPENCODE_CONFIG_FILE}.tmp" "$OPENCODE_CONFIG_FILE"
-    chown coder:coder "$OPENCODE_CONFIG_FILE"
-    log_info "Gitea MCP server configured for $GITEA_URL."
-fi
-
 # Ensure directories exist and are owned by coder
 mkdir -p /home/coder/.local/share/opencode
 chown -R coder:coder /home/coder/.local/share/opencode
@@ -388,6 +364,20 @@ if [ -n "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
     fi
 fi
 
+# When GITEA_URL+GITEA_TOKEN are set, configure the tea CLI non-interactively.
+# tea login add is not idempotent, so delete any existing entry first so token
+# rotations are picked up on reboot.
+if [ -n "${GITEA_URL:-}" ] && [ -n "${GITEA_TOKEN:-}" ] && command -v tea >/dev/null 2>&1; then
+    su - coder -c "tea login delete default" >/dev/null 2>&1 || true
+    TEA_URL_Q=$(printf %q "$GITEA_URL")
+    TEA_TOKEN_Q=$(printf %q "$GITEA_TOKEN")
+    if su - coder -c "tea login add --name default --url $TEA_URL_Q --token $TEA_TOKEN_Q" >/dev/null 2>&1; then
+        log_info "Configured tea CLI login 'default' for $GITEA_URL."
+    else
+        log_warn "tea login add failed — Gitea CLI auth not configured."
+    fi
+fi
+
 # ==============================================================================
 # Start Services
 # ==============================================================================
@@ -399,7 +389,7 @@ OPENCODE_ENV_FILE="/etc/profile.d/opencode-env.sh"
 : > "$OPENCODE_ENV_FILE"
 while IFS='=' read -r key val; do
     case "$key" in
-        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*|GROQ_*|GITHUB_TOKEN|AWS_*|AZURE_*)
+        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*|GROQ_*|GITHUB_TOKEN|GITEA_URL|GITEA_TOKEN|AWS_*|AZURE_*)
             printf 'export %s=%q\n' "$key" "$val" >> "$OPENCODE_ENV_FILE"
             ;;
     esac

@@ -23,7 +23,7 @@ services:
       - GIT_BRANCH=${GIT_BRANCH:-}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
-      # Gitea MCP
+      # Gitea CLI (tea)
       - GITEA_URL=${GITEA_URL:-}
       - GITEA_TOKEN=${GITEA_TOKEN:-}
       # Server auth

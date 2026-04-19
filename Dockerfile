@@ -62,11 +62,12 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://go.dev/dl/go1.26.1.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# Install Gitea MCP server (official Go binary)
-ENV GOPATH="/tmp/go-build"
-RUN go install gitea.com/gitea/gitea-mcp@latest \
-    && cp "${GOPATH}/bin/gitea-mcp" /usr/local/bin/gitea-mcp \
-    && rm -rf "${GOPATH}"
+# Gitea tea CLI (multi-arch prebuilt binary)
+ARG TEA_VERSION=0.11.0
+RUN ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL "https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-${ARCH}" \
+         -o /usr/local/bin/tea \
+    && chmod +x /usr/local/bin/tea
 
 # Create non-root user
 RUN userdel -r ubuntu 2>/dev/null || true \

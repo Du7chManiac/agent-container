@@ -270,7 +270,7 @@ GIT_USER_EMAIL="you@example.com"
 
 ## Gitea Integration
 
-The container includes the [official Gitea MCP server](https://gitea.com/gitea/gitea-mcp), pre-installed as a Go binary. When configured, this gives the AI agent direct access to your Gitea instance — it can manage repositories, issues, pull requests, branches, releases, and more.
+The container ships the [official Gitea `tea` CLI](https://gitea.com/gitea/tea) — Gitea's counterpart to the GitHub `gh` CLI. When configured, the agent (or you, over SSH) can drive repositories, issues, pull requests, releases, and more from the shell.
 
 ### Setup
 
@@ -281,7 +281,9 @@ GITEA_URL=https://gitea.example.com    # Your Gitea instance URL
 GITEA_TOKEN=your-personal-access-token  # Gitea PAT with appropriate scopes
 ```
 
-On startup, the entrypoint automatically injects the Gitea MCP server configuration into `opencode.json`. The AI agent will have access to Gitea tools in its next session.
+On startup the entrypoint runs `tea login add --name default --url $GITEA_URL --token $GITEA_TOKEN` as the `coder` user, writing persistent auth to `~/.config/tea/config.yml`. The existing `default` login is deleted first so rotating the token and restarting the container just works.
+
+Both vars are also forwarded into the opencode process environment, matching how `GITHUB_TOKEN` is exposed.
 
 ### Generating a Gitea Token
 
@@ -289,15 +291,18 @@ On startup, the entrypoint automatically injects the Gitea MCP server configurat
 2. Create a new token with the scopes you need (e.g., `repo`, `issue`, `admin:org`)
 3. Copy the token into `GITEA_TOKEN`
 
-### What the Agent Can Do
+### What You (and the Agent) Can Do
 
-With the Gitea MCP server, the AI agent can:
-- Create, list, and manage repositories
-- Create, edit, and search issues
-- Manage pull requests and code reviews
-- Work with branches, tags, and releases
-- Search code across repositories
-- Manage organizations and teams
+Once `tea` is authenticated, typical commands include:
+
+```bash
+tea repos list
+tea issues create --repo owner/repo --title "..." --body "..."
+tea pulls list --repo owner/repo
+tea releases create --repo owner/repo --tag v1.0.0
+```
+
+See `tea --help` or the [tea docs](https://gitea.com/gitea/tea) for the full command set.
 
 ## OpenCode Config
 
@@ -360,7 +365,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Go** | 1.26.1 | Official binary |
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
-| **Gitea MCP** | Latest | Official Go binary, auto-configured via env vars |
+| **Gitea CLI (tea)** | 0.11.0 | Pinned prebuilt binary; authenticates via `GITEA_URL` + `GITEA_TOKEN` |
 | **OpenChamber** | 1.9.4 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber` |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
@@ -431,8 +436,8 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
 | `GROQ_API_KEY` | No | — | Groq API key |
 | `GITHUB_TOKEN` | No | — | GitHub PAT for `gh` CLI. When set, the entrypoint also runs `gh auth setup-git` so `git push`/`git fetch` over HTTPS work non-interactively from the terminal. |
-| `GITEA_URL` | No | — | Gitea instance URL |
-| `GITEA_TOKEN` | No | — | Gitea personal access token |
+| `GITEA_URL` | No | — | Gitea instance URL. When set alongside `GITEA_TOKEN`, the entrypoint runs `tea login add --name default` so the `tea` CLI is authenticated non-interactively. |
+| `GITEA_TOKEN` | No | — | Gitea PAT for the `tea` CLI |
 | `SSH_PORT` | No | `2222` | Host port mapped to container SSH port 22 |
 
 > **Note:** Environment variables matching `AWS_*` and `AZURE_*` patterns are also automatically forwarded into the container.
@@ -578,12 +583,13 @@ docker exec -u coder <container> git config --global --get-regexp credential
 
 It should list a helper entry for `https://github.com`. This also silences OpenChamber's `Failed to filter active remote branches, returning all` warning in the branches panel.
 
-### Gitea MCP not working
+### Gitea `tea` CLI auth not working
 
 - Verify both `GITEA_URL` and `GITEA_TOKEN` are set
 - Check that the token has appropriate scopes in your Gitea instance
-- Inspect the generated config: `cat ~/.config/opencode/opencode.json`
-- Check container logs for "Gitea MCP server configured" message
+- List configured logins: `docker exec -u coder <container> tea login list`
+- Inspect the generated config: `docker exec -u coder <container> cat ~/.config/tea/config.yml`
+- Check container logs for the `Configured tea CLI login 'default' for …` line
 
 ### Dokploy network not found
 
@@ -595,7 +601,7 @@ This container bundles and builds on the work of several upstream open-source pr
 
 - **[opencode](https://opencode.ai)** — the terminal-native AI coding agent that powers every mode of this container.
 - **[OpenChamber](https://github.com/openchamber/openchamber)** by [@btriapitsyn](https://github.com/btriapitsyn) — the "control room" web UI enabled via `OPENCODE_MODE=openchamber`. Distributed as the `@openchamber/web` npm package.
-- **[Gitea MCP](https://gitea.com/gitea/gitea-mcp)** — the official Gitea MCP server for AI agent integration.
+- **[Gitea tea CLI](https://gitea.com/gitea/tea)** — the official Gitea command-line client, authenticated via `GITEA_URL` + `GITEA_TOKEN` on startup.
 - **[Dokploy](https://dokploy.com)** — the self-hosted PaaS this container is primarily designed to deploy on.
 
 All upstream projects retain their own licenses. This repository's glue code and Docker configuration are MIT-licensed — see [LICENSE](LICENSE).
