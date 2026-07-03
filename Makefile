@@ -2,7 +2,7 @@ SHELL := /bin/bash
 BATS := ./tests/bats/bin/bats
 SHELLCHECK := shellcheck
 
-.PHONY: test lint test-unit install-bats clean
+.PHONY: test lint test-unit install-bats build clean
 
 # Default: lint + unit tests
 test: lint test-unit
@@ -20,7 +20,7 @@ lint:
 
 # Unit tests (no Docker required)
 test-unit: install-bats
-	$(BATS) tests/test_logging.bats tests/test_validate_env.bats
+	$(BATS) tests/test_*.bats
 
 # Build Docker image (smoke test)
 build:

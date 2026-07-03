@@ -13,7 +13,7 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run shellcheck
-        run: shellcheck -s bash entrypoint.sh
+        run: shellcheck -s bash entrypoint.sh healthcheck.sh
 
   unit-tests:
     runs-on: ubuntu-latest

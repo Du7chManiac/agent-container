@@ -24,11 +24,11 @@ docker compose up -d
 # Remote TUI (serve mode): opencode attach http://localhost:4096
 ```
 
-> **Note:** When running standalone, you may need to add `ports` back to `docker-compose.yml` or use `docker exec` to access the container. See `env.example` for all configurable environment variables.
+> **Note:** See `.env.example` for all configurable environment variables — copy it to `.env` and fill in what you need.
 
 ## Access Modes
 
-The container supports three access modes, controlled by the `OPENCODE_MODE` environment variable:
+The container supports four access modes, controlled by the `OPENCODE_MODE` environment variable:
 
 ### Serve Mode (default)
 
@@ -406,6 +406,7 @@ On first start (when the `coder-home` volume is empty), the entrypoint copies a 
 
 The container includes a Docker HEALTHCHECK that adapts to the active mode:
 - **serve/web**: Checks the HTTP endpoint on the configured port
+- **openchamber**: Checks the OpenChamber UI on the configured port (any HTTP response counts, including 401 when a UI password is set)
 - **ssh**: Verifies the SSH daemon is accepting connections
 
 Docker and Dokploy will report the container as `healthy` once the primary service is ready.
@@ -492,15 +493,16 @@ make build
 
 ```
 tests/
-  test_helper.bash          # Shared setup: sources entrypoint functions
-  test_logging.bats         # Tests for log_info, log_warn, log_error
-  test_validate_env.bats    # Tests for all env validation paths (~33 tests)
+  test_helper.bash            # Shared setup: sources entrypoint functions
+  test_logging.bats           # Tests for log_info, log_warn, log_error
+  test_validate_env.bats      # Tests for all env validation paths
+  test_env_forwarding.bats    # Tests for the API-key env forwarding to opencode
 ```
 
 ### CI
 
 GitHub Actions runs on every push to `main` and on all pull requests:
-- **lint** — shellcheck on `entrypoint.sh`
+- **lint** — shellcheck on `entrypoint.sh` and `healthcheck.sh`
 - **unit-tests** — all bats test suites
 - **docker-build** — Docker image build smoke test
 

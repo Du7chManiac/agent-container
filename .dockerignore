@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.dockerignore
+.env
+.env.example
+tests
+Makefile
+README.md
+LICENSE
+docker-compose.yml
+CLAUDE.md

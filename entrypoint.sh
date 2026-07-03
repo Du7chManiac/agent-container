@@ -43,7 +43,7 @@ validate_env() {
 
     # Validate OPENCODE_PORT is a valid port number
     if [ -n "${OPENCODE_PORT:-}" ]; then
-        if ! echo "$OPENCODE_PORT" | grep -qE '^[0-9]+$' || \
+        if ! echo "$OPENCODE_PORT" | grep -qE '^[0-9]{1,5}$' || \
            [ "$OPENCODE_PORT" -lt 1 ] || [ "$OPENCODE_PORT" -gt 65535 ]; then
             log_error "Invalid OPENCODE_PORT='$OPENCODE_PORT'. Must be a number between 1 and 65535"
             errors=$((errors + 1))
@@ -131,6 +131,30 @@ validate_env() {
     log_info "Environment validation passed."
 }
 
+# ==============================================================================
+# OpenCode Env Forwarding
+# ==============================================================================
+# Write API keys and server config into a profile.d file so `su - coder`
+# login shells (which start opencode) inherit them. Reads the environment
+# NUL-delimited so multi-line values survive intact.
+write_opencode_env_file() {
+    local env_file="$1"
+    local kv key val
+    : > "$env_file"
+    while IFS= read -r -d '' kv; do
+        key="${kv%%=*}"
+        val="${kv#*=}"
+        # Only forward keys that are valid shell identifiers
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        case "$key" in
+            OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*|GROQ_*|GITHUB_TOKEN|GITEA_URL|GITEA_TOKEN|AWS_*|AZURE_*)
+                printf 'export %s=%q\n' "$key" "$val" >> "$env_file"
+                ;;
+        esac
+    done < <(env -0)
+    chmod 644 "$env_file"
+}
+
 # Guard: when sourced for testing, stop here and export only function definitions
 if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
     # shellcheck disable=SC2317
@@ -143,7 +167,7 @@ validate_env
 # First-boot Home Directory Initialization
 # ==============================================================================
 if [ ! -f /home/coder/.initialized ]; then
-    cp -rn /etc/skel.coder/. /home/coder/
+    cp -r --update=none /etc/skel.coder/. /home/coder/
     touch /home/coder/.initialized
     chown -R coder:coder /home/coder
     log_info "Initialized home directory from skeleton."
@@ -200,6 +224,20 @@ if [ "$OPENCODE_MODE" = "ssh" ] || [ "$SSH_ENABLED" = "true" ]; then
     SSH_NEEDED=true
 fi
 
+# Start sshd in the background and record its real PID for the cleanup trap.
+# sshd self-daemonizes (no `&`), so `$!` would capture an unrelated process —
+# read the PID from sshd's pidfile instead.
+start_background_sshd() {
+    log_info "Starting SSH server in background..."
+    /usr/sbin/sshd -e
+    local _
+    for _ in 1 2 3 4 5; do
+        [ -s /run/sshd.pid ] && break
+        sleep 0.1
+    done
+    SSHD_PID=$(cat /run/sshd.pid 2>/dev/null || true)
+}
+
 if [ "$SSH_NEEDED" = "true" ]; then
     # SSH Host Key Persistence
     HOST_KEY_DIR="/etc/ssh/host_keys"
@@ -229,7 +267,7 @@ if [ "$SSH_NEEDED" = "true" ]; then
     # SSH public key auth
     if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
         mkdir -p /home/coder/.ssh
-        echo "$SSH_PUBLIC_KEY" > /home/coder/.ssh/authorized_keys
+        printf '%s\n' "$SSH_PUBLIC_KEY" > /home/coder/.ssh/authorized_keys
         chmod 700 /home/coder/.ssh
         chmod 600 /home/coder/.ssh/authorized_keys
         chown -R coder:coder /home/coder/.ssh
@@ -261,7 +299,7 @@ update_opencode() {
     # Get current version (handle missing binary gracefully)
     local current_version=""
     if [ -x "$OPENCODE_BIN" ]; then
-        current_version=$(su - coder -c "opencode --version" 2>/dev/null || echo "unknown")
+        current_version=$(su - coder -c "$OPENCODE_BIN --version" 2>/dev/null || echo "unknown")
     fi
     log_info "Current OpenCode version: ${current_version:-not installed}"
 
@@ -269,7 +307,7 @@ update_opencode() {
     if su - coder -c "curl -fsSL https://opencode.ai/install | bash" 2>/dev/null; then
         local new_version=""
         if [ -x "$OPENCODE_BIN" ]; then
-            new_version=$(su - coder -c "opencode --version" 2>/dev/null || echo "unknown")
+            new_version=$(su - coder -c "$OPENCODE_BIN --version" 2>/dev/null || echo "unknown")
         fi
 
         if [ "$current_version" != "$new_version" ]; then
@@ -310,7 +348,7 @@ fi
 
 # Override config from env var if provided
 if [ -n "${OPENCODE_CONFIG_JSON:-}" ]; then
-    echo "$OPENCODE_CONFIG_JSON" > "$OPENCODE_CONFIG_FILE"
+    printf '%s\n' "$OPENCODE_CONFIG_JSON" > "$OPENCODE_CONFIG_FILE"
     chown coder:coder "$OPENCODE_CONFIG_FILE"
     log_info "OpenCode config overridden from OPENCODE_CONFIG_JSON env var."
 fi
@@ -326,12 +364,14 @@ chown -R coder:coder /home/coder/.config
 if [ -n "${GIT_REPO_URL:-}" ]; then
     CLONE_DIR="/home/coder/workspace/$(basename "$GIT_REPO_URL" .git)"
     if [ ! -d "$CLONE_DIR" ]; then
-        BRANCH_FLAG=""
+        # Shell-escape everything interpolated into the su -c command line
+        CLONE_CMD="git clone"
         if [ -n "${GIT_BRANCH:-}" ]; then
-            BRANCH_FLAG="--branch $GIT_BRANCH"
+            CLONE_CMD="$CLONE_CMD --branch $(printf %q "$GIT_BRANCH")"
         fi
+        CLONE_CMD="$CLONE_CMD $(printf %q "$GIT_REPO_URL") $(printf %q "$CLONE_DIR")"
         log_info "Cloning $GIT_REPO_URL into $CLONE_DIR..."
-        if su - coder -c "git clone $BRANCH_FLAG '$GIT_REPO_URL' '$CLONE_DIR'"; then
+        if su - coder -c "$CLONE_CMD"; then
             log_info "Repository cloned successfully."
         else
             log_error "Failed to clone repository from $GIT_REPO_URL"
@@ -346,10 +386,10 @@ fi
 # Git Config
 # ==============================================================================
 if [ -n "${GIT_USER_NAME:-}" ]; then
-    su - coder -c "git config --global user.name '$GIT_USER_NAME'"
+    su - coder -c "git config --global user.name $(printf %q "$GIT_USER_NAME")"
 fi
 if [ -n "${GIT_USER_EMAIL:-}" ]; then
-    su - coder -c "git config --global user.email '$GIT_USER_EMAIL'"
+    su - coder -c "git config --global user.email $(printf %q "$GIT_USER_EMAIL")"
 fi
 
 # When GITHUB_TOKEN is set, wire gh as git's credential helper for github.com
@@ -386,15 +426,7 @@ OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 # Forward API keys and server config to the opencode process.
 # su - coder starts a login shell that auto-sources /etc/profile.d/*.sh
 OPENCODE_ENV_FILE="/etc/profile.d/opencode-env.sh"
-: > "$OPENCODE_ENV_FILE"
-while IFS='=' read -r key val; do
-    case "$key" in
-        OPENCODE_SERVER_*|ANTHROPIC_*|OPENAI_*|GOOGLE_*|OPENROUTER_*|GROQ_*|GITHUB_TOKEN|GITEA_URL|GITEA_TOKEN|AWS_*|AZURE_*)
-            printf 'export %s=%q\n' "$key" "$val" >> "$OPENCODE_ENV_FILE"
-            ;;
-    esac
-done < <(env)
-chmod 644 "$OPENCODE_ENV_FILE"
+write_opencode_env_file "$OPENCODE_ENV_FILE"
 
 if [ -s "$OPENCODE_ENV_FILE" ]; then
     log_info "Forwarded env vars: $(grep -oP '(?<=export )\w+' "$OPENCODE_ENV_FILE" | tr '\n' ' ')"
@@ -405,18 +437,14 @@ fi
 case "$OPENCODE_MODE" in
     serve)
         if [ "$SSH_ENABLED" = "true" ]; then
-            log_info "Starting SSH server in background..."
-            /usr/sbin/sshd -e
-            SSHD_PID=$!
+            start_background_sshd
         fi
         log_info "Starting opencode server on port $OPENCODE_PORT..."
         exec su - coder -c "$OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     web)
         if [ "$SSH_ENABLED" = "true" ]; then
-            log_info "Starting SSH server in background..."
-            /usr/sbin/sshd -e
-            SSHD_PID=$!
+            start_background_sshd
         fi
         log_info "Starting opencode web UI on port $OPENCODE_PORT..."
         exec su - coder -c "$OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
@@ -427,9 +455,7 @@ case "$OPENCODE_MODE" in
         ;;
     openchamber)
         if [ "$SSH_ENABLED" = "true" ]; then
-            log_info "Starting SSH server in background..."
-            /usr/sbin/sshd -e
-            SSHD_PID=$!
+            start_background_sshd
         fi
         log_info "Starting OpenChamber web UI on port $OPENCODE_PORT..."
 
