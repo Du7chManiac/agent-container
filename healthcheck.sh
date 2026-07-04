@@ -9,11 +9,11 @@ case "$MODE" in
     openchamber)
         # Accept any HTTP response (including 401 when UI password is set)
         # since we only need to verify the server is listening.
-        curl -s -o /dev/null "http://localhost:${PORT}/" || exit 1
+        curl -s --max-time 4 -o /dev/null "http://localhost:${PORT}/" || exit 1
         ;;
     *)
         # Accept any HTTP response (including 401 when OPENCODE_SERVER_PASSWORD
         # is set) since we only need to verify the server is listening.
-        curl -s -o /dev/null "http://localhost:${PORT}/doc" || exit 1
+        curl -s --max-time 4 -o /dev/null "http://localhost:${PORT}/doc" || exit 1
         ;;
 esac

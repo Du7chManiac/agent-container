@@ -95,6 +95,13 @@ teardown() {
     [[ "$output" == *"Invalid OPENCODE_PORT"* ]]
 }
 
+@test "validate_env: rejects OPENCODE_PORT larger than 64-bit integers" {
+    export OPENCODE_PORT=99999999999999999999
+    run validate_env
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Invalid OPENCODE_PORT"* ]]
+}
+
 @test "validate_env: rejects OPENCODE_PORT=-1" {
     export OPENCODE_PORT=-1
     run validate_env
