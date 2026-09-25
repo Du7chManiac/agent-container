@@ -529,7 +529,7 @@ OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 # one on every process start. Persist it in the volume when the operator did
 # not set one. OpenChamber manages its own server password, so skip it there.
 if [ "$OPENCODE_MODE" = "serve" ] || [ "$OPENCODE_MODE" = "web" ]; then
-    ensure_server_password
+    ensure_server_password "$SERVER_PASSWORD_FILE"
 fi
 
 # Forward API keys and server config to the opencode process.

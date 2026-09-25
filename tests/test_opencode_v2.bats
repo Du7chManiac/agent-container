@@ -83,7 +83,13 @@ EOF
     local first="$OPENCODE_SERVER_PASSWORD"
     [ -n "$first" ]
     [ "$(tr -d '\n' < "$file")" = "$first" ]
-    [ "$(stat -f '%Lp' "$file" 2>/dev/null || stat -c '%a' "$file")" = "600" ]
+    # GNU stat uses -c; BSD stat uses -f. Calling -f first makes GNU stat
+    # treat the format string as a filesystem path and can abort the test.
+    if stat -c '%a' "$file" >/dev/null 2>&1; then
+        [ "$(stat -c '%a' "$file")" = "600" ]
+    else
+        [ "$(stat -f '%Lp' "$file")" = "600" ]
+    fi
 
     unset OPENCODE_SERVER_PASSWORD
     ensure_server_password "$file"
