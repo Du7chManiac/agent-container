@@ -155,6 +155,113 @@ write_opencode_env_file() {
     chmod 644 "$env_file"
 }
 
+# v2 installer. The unversioned https://opencode.ai/install script still ships v1.
+OPENCODE_INSTALL_URL="https://opencode.ai/v2/install"
+OPENCODE_SKEL_BIN="/etc/skel.coder/.opencode/bin/opencode"
+SERVER_PASSWORD_FILE="/home/coder/.config/opencode/server-password"
+
+# First semver-looking token from `binary --version`, without a leading v.
+opencode_version_of() {
+    local bin="$1"
+    local raw="" line token
+    if [ ! -x "$bin" ]; then
+        printf ''
+        return 0
+    fi
+    raw=$("$bin" --version 2>/dev/null || true)
+    while IFS= read -r line; do
+        token="${line##* }"
+        token="${token#v}"
+        if [[ "$token" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            printf '%s' "$token"
+            return 0
+        fi
+    done <<< "$raw"
+    printf ''
+}
+
+opencode_is_v2() {
+    [[ "${1:-}" =~ ^2\. ]]
+}
+
+# Install or replace dest from the image skeleton when it is missing or not v2.
+# Leaves a 2.x binary in place so auto-update is not rolled back. Does not
+# touch config or session data. Returns 1 when the skeleton binary is missing.
+ensure_opencode_binary() {
+    local dest="$1"
+    local skel="$2"
+    local version=""
+    version=$(opencode_version_of "$dest")
+    if opencode_is_v2 "$version"; then
+        log_info "OpenCode ${version} is already v2."
+        return 0
+    fi
+    if [ ! -x "$skel" ]; then
+        return 1
+    fi
+    mkdir -p "$(dirname "$dest")"
+    cp -a "$skel" "$dest"
+    chmod 755 "$dest"
+    if [ "$(id -u)" -eq 0 ] && id coder >/dev/null 2>&1; then
+        chown coder:coder "$dest"
+    fi
+    local new_version=""
+    new_version=$(opencode_version_of "$dest")
+    if [ -n "$version" ]; then
+        log_info "Replaced OpenCode ${version} with ${new_version}."
+    else
+        log_info "Installed OpenCode ${new_version} from skeleton."
+    fi
+}
+
+# Serve/web always have a password in v2. An explicit OPENCODE_SERVER_PASSWORD
+# wins, then OPENCODE_PASSWORD, then the file persisted in the coder home.
+# The generated value is logged only when this function creates the file.
+ensure_server_password() {
+    local file="${1:-$SERVER_PASSWORD_FILE}"
+    local existing="" generated=""
+    if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+        return 0
+    fi
+    if [ -n "${OPENCODE_PASSWORD:-}" ]; then
+        export OPENCODE_SERVER_PASSWORD="$OPENCODE_PASSWORD"
+        log_info "Using OPENCODE_PASSWORD as the OpenCode server password."
+        return 0
+    fi
+    if [ -f "$file" ]; then
+        existing=$(tr -d '\r\n' < "$file")
+        if [ -n "$existing" ]; then
+            export OPENCODE_SERVER_PASSWORD="$existing"
+            log_info "Using persisted OpenCode server password."
+            return 0
+        fi
+    fi
+    generated=$(openssl rand -base64 24)
+    mkdir -p "$(dirname "$file")"
+    printf '%s\n' "$generated" > "$file"
+    chmod 600 "$file"
+    if [ "$(id -u)" -eq 0 ] && id coder >/dev/null 2>&1; then
+        chown coder:coder "$file"
+    fi
+    export OPENCODE_SERVER_PASSWORD="$generated"
+    log_warn "No OPENCODE_SERVER_PASSWORD set."
+    log_warn "Generated server password: $generated"
+}
+
+# Drop server credentials from the profile file before OpenChamber starts.
+# grep -v exits 1 when every line is removed; that must still replace the file,
+# or a password-only env file keeps OPENCODE_SERVER_PASSWORD.
+scrub_managed_opencode_auth() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        return 0
+    fi
+    grep -vE '^export OPENCODE_(SERVER_PASSWORD|SERVER_USERNAME|PASSWORD)=' "$env_file" \
+        > "${env_file}.tmp" || true
+    mv "${env_file}.tmp" "$env_file"
+    chmod 644 "$env_file"
+}
+
 # Guard: when sourced for testing, stop here and export only function definitions
 if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
     # shellcheck disable=SC2317
@@ -173,22 +280,17 @@ if [ ! -f /home/coder/.initialized ]; then
     log_info "Initialized home directory from skeleton."
 fi
 
-# Ensure opencode binary exists (may be missing if volume predates image)
+# Ensure the home binary is OpenCode v2. An existing volume keeps a v1 binary
+# that is still executable, so a missing-file check is not enough. Config and
+# session data stay where they are; v2 migrates them on first start.
 OPENCODE_BIN="/home/coder/.opencode/bin/opencode"
-if [ ! -x "$OPENCODE_BIN" ]; then
-    if [ -x /etc/skel.coder/.opencode/bin/opencode ]; then
-        mkdir -p /home/coder/.opencode/bin
-        cp -a /etc/skel.coder/.opencode/bin/opencode "$OPENCODE_BIN"
-        chown coder:coder "$OPENCODE_BIN"
-        log_info "Restored opencode binary from skeleton."
+if ! ensure_opencode_binary "$OPENCODE_BIN" "$OPENCODE_SKEL_BIN"; then
+    log_warn "OpenCode binary not found. Reinstalling..."
+    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash"; then
+        log_info "OpenCode reinstalled successfully."
     else
-        log_warn "OpenCode binary not found. Reinstalling..."
-        if su - coder -c "curl -fsSL https://opencode.ai/install | bash"; then
-            log_info "OpenCode reinstalled successfully."
-        else
-            log_error "Failed to install OpenCode. Container cannot start."
-            exit 1
-        fi
+        log_error "Failed to install OpenCode. Container cannot start."
+        exit 1
     fi
 fi
 
@@ -304,7 +406,7 @@ update_opencode() {
     log_info "Current OpenCode version: ${current_version:-not installed}"
 
     # Download latest version
-    if su - coder -c "curl -fsSL https://opencode.ai/install | bash" 2>/dev/null; then
+    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash" 2>/dev/null; then
         local new_version=""
         if [ -x "$OPENCODE_BIN" ]; then
             new_version=$(su - coder -c "$OPENCODE_BIN --version" 2>/dev/null || echo "unknown")
@@ -423,6 +525,13 @@ fi
 # ==============================================================================
 OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 
+# v2 serve refuses to start without a password and would otherwise mint a new
+# one on every process start. Persist it in the volume when the operator did
+# not set one. OpenChamber manages its own server password, so skip it there.
+if [ "$OPENCODE_MODE" = "serve" ] || [ "$OPENCODE_MODE" = "web" ]; then
+    ensure_server_password "$SERVER_PASSWORD_FILE"
+fi
+
 # Forward API keys and server config to the opencode process.
 # su - coder starts a login shell that auto-sources /etc/profile.d/*.sh
 OPENCODE_ENV_FILE="/etc/profile.d/opencode-env.sh"
@@ -435,19 +544,18 @@ else
 fi
 
 case "$OPENCODE_MODE" in
-    serve)
+    serve|web)
         if [ "$SSH_ENABLED" = "true" ]; then
             start_background_sshd
         fi
-        log_info "Starting opencode server on port $OPENCODE_PORT..."
+        # v2 serves the HTTP API and the web UI from `opencode serve`.
+        # `opencode web` no longer exists; OPENCODE_MODE=web stays valid.
+        if [ "$OPENCODE_MODE" = "web" ]; then
+            log_info "Starting opencode server with web UI on port $OPENCODE_PORT..."
+        else
+            log_info "Starting opencode server on port $OPENCODE_PORT..."
+        fi
         exec su - coder -c "$OPENCODE_BIN serve --port $OPENCODE_PORT --hostname 0.0.0.0"
-        ;;
-    web)
-        if [ "$SSH_ENABLED" = "true" ]; then
-            start_background_sshd
-        fi
-        log_info "Starting opencode web UI on port $OPENCODE_PORT..."
-        exec su - coder -c "$OPENCODE_BIN web --port $OPENCODE_PORT --hostname 0.0.0.0"
         ;;
     ssh)
         log_info "Starting SSH server on port 22..."
@@ -497,17 +605,13 @@ case "$OPENCODE_MODE" in
             chown -R coder:coder "$OC_SETTINGS_DIR"
         fi
 
-        # Strip OPENCODE_SERVER_{PASSWORD,USERNAME} from the forwarded env file.
+        # Strip server passwords from the forwarded env file.
         # OpenChamber rotates its own managed password for the opencode subprocess
-        # (see ensureLocalOpenCodeServerPassword in @openchamber/web), so forwarding
-        # a user-set OPENCODE_SERVER_PASSWORD here would be silently consumed by
-        # OpenChamber — breaking the warning above that claims it's ignored. Scrub
-        # them so OpenChamber's own rotation is authoritative.
-        if [ -f "$OPENCODE_ENV_FILE" ]; then
-            grep -vE '^export OPENCODE_SERVER_(PASSWORD|USERNAME)=' "$OPENCODE_ENV_FILE" \
-                > "${OPENCODE_ENV_FILE}.tmp" && mv "${OPENCODE_ENV_FILE}.tmp" "$OPENCODE_ENV_FILE"
-            chmod 644 "$OPENCODE_ENV_FILE"
-        fi
+        # (see ensureLocalOpenCodeServerPassword in @openchamber/web). v2 reads
+        # OPENCODE_PASSWORD first and OPENCODE_SERVER_PASSWORD as a legacy alias,
+        # so forwarding either would be consumed by that subprocess. Scrub both
+        # so OpenChamber's own rotation is authoritative.
+        scrub_managed_opencode_auth "$OPENCODE_ENV_FILE"
 
         # Forward to the openchamber process and the opencode it spawns.
         # Appended to the same env file sourced by su - coder's login shell.
@@ -517,6 +621,11 @@ case "$OPENCODE_MODE" in
             printf 'export OPENCODE_PORT=%q\n' "$OC_INTERNAL_PORT"
             printf 'export OPENCHAMBER_OPENCODE_HOSTNAME=%q\n' "127.0.0.1"
             printf 'export OPENCODE_BINARY=%q\n' "$OPENCODE_BIN"
+            # OpenChamber 2 refuses a non-loopback bind without a UI password.
+            # Empty OPENCHAMBER_UI_PASSWORD is the existing trusted-network mode.
+            if [ -z "${OPENCHAMBER_UI_PASSWORD:-}" ]; then
+                printf 'export OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN=%q\n' "true"
+            fi
         } >> "$OPENCODE_ENV_FILE"
 
         # Shell-escape the password to handle special chars safely
