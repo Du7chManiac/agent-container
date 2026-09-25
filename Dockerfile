@@ -71,10 +71,12 @@ RUN userdel -r ubuntu 2>/dev/null || true \
     && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/coder \
     && chmod 0440 /etc/sudoers.d/coder
 
-# Install opencode as coder user
+# Install OpenCode v2 as the coder user. The v2 installer replaces the binary
+# at ~/.opencode/bin/opencode; --version pins the release instead of floating.
+ARG OPENCODE_VERSION=2.0.16
 USER coder
 WORKDIR /home/coder
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --version "${OPENCODE_VERSION}" --no-modify-path
 ENV PATH="/home/coder/.opencode/bin:${PATH}"
 
 # Go path for coder
@@ -83,7 +85,8 @@ ENV PATH="${GOPATH}/bin:/usr/local/go/bin:${PATH}"
 
 # Create skeleton directory for first-boot home initialization
 USER root
-RUN mkdir -p /etc/skel.coder/.config/opencode \
+RUN echo "${OPENCODE_VERSION}" > /etc/opencode-version \
+    && mkdir -p /etc/skel.coder/.config/opencode \
     /etc/skel.coder/.local/share/opencode \
     /etc/skel.coder/.opencode/bin \
     /etc/skel.coder/.ssh \
@@ -94,13 +97,9 @@ RUN cp -a /home/coder/.bashrc /etc/skel.coder/.bashrc 2>/dev/null || true \
     && cp -a /home/coder/.profile /etc/skel.coder/.profile 2>/dev/null || true
 
 # OpenChamber web UI (optional alternative to opencode's built-in web — enable via OPENCODE_MODE=openchamber).
-# Installed near the bottom of the Dockerfile and gated on CACHEBUST so a redeploy
-# can pull the latest @openchamber/web release without busting the heavier layers
-# above (apt, Node, Go, gh, tea, opencode). Pass --build-arg CACHEBUST=$(date +%s)
-# (or a commit SHA) to force a fresh fetch; otherwise the layer is cached normally.
-ARG CACHEBUST=0
-RUN echo "cachebust=${CACHEBUST}" >/dev/null \
-    && npm install -g @openchamber/web@latest \
+# Pinned to the release that requires OpenCode >= 2.0.15 and ships the matching @opencode/client.
+ARG OPENCHAMBER_VERSION=2.0.1
+RUN npm install -g "@openchamber/web@${OPENCHAMBER_VERSION}" \
     && npm cache clean --force
 
 COPY entrypoint.sh /entrypoint.sh

@@ -20,8 +20,8 @@ docker network create dokploy-network
 docker compose up -d
 
 # 4. Access via browser or remote TUI
-# Browser (web mode): http://localhost:4096
-# Remote TUI (serve mode): opencode attach http://localhost:4096
+# Browser (web or serve mode): http://localhost:4096
+# Remote TUI (OpenCode 2 client): opencode --server http://localhost:4096
 ```
 
 > **Note:** See `.env.example` for all configurable environment variables — copy it to `.env` and fill in what you need.
@@ -36,14 +36,14 @@ The container supports four access modes, controlled by the `OPENCODE_MODE` envi
 OPENCODE_MODE=serve
 ```
 
-Starts a headless HTTP API server (REST + SSE). This allows:
+Starts the OpenCode 2 server. The same process serves the HTTP API and the web UI. This allows:
 
-- **Remote TUI** — Connect a local opencode terminal client to the remote server:
+- **Remote TUI** — Connect a local OpenCode 2 client to the remote server:
   ```bash
-  opencode attach https://your-domain.example.com
+  opencode --server https://your-domain.example.com
   ```
+- **Browser** — Open the server URL. OpenCode 2 signs the browser in with the server password.
 - **Multiple clients** — Several browsers or TUI clients can connect simultaneously to the same server, sharing session state
-- **API access** — Full REST API with OpenAPI 3.1 spec available at `/doc`
 
 ### Web Mode
 
@@ -51,7 +51,7 @@ Starts a headless HTTP API server (REST + SSE). This allows:
 OPENCODE_MODE=web
 ```
 
-Starts the opencode web UI — a full browser-based interface for interacting with the AI agent. Access it at:
+`OPENCODE_MODE=web` still starts the container, and it runs the same OpenCode 2 server as `serve`. OpenCode 2 no longer has a separate `opencode web` command; the web UI is served by `opencode serve`. Access it at:
 
 ```
 https://your-domain.example.com
@@ -70,7 +70,7 @@ Starts [OpenChamber](https://github.com/openchamber/openchamber) — a "control 
 Differences from `web` mode:
 
 - **Auth:** OpenChamber uses a single shared UI password set via `OPENCHAMBER_UI_PASSWORD` (not HTTP Basic Auth). `OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_USERNAME` are **ignored** in this mode — the entrypoint logs a warning if you set them.
-- **No `opencode attach`:** Because OpenChamber manages opencode internally (on a private port), the external REST API is not exposed, so the `opencode attach` remote TUI client cannot connect. If you need remote TUI access, stay on `serve` mode.
+- **No remote TUI:** Because OpenChamber manages opencode internally (on a private port), the external OpenCode server is not exposed, so `opencode --server` cannot connect to it. If you need a remote TUI, stay on `serve` mode.
 - **Unprotected without a password:** If `OPENCHAMBER_UI_PASSWORD` is unset, the container still starts (matching the existing "SSH with no auth" behavior) but logs a prominent warning. Only do this on trusted networks (e.g., behind Tailscale).
 - **Reverse proxy:** OpenChamber's terminal WebSocket has a strict origin check. When the container is behind Traefik, nginx, etc., set `OPENCHAMBER_PUBLIC_ORIGIN` to the externally-visible origin (e.g. `https://opencode.example.com`, no path). The entrypoint seeds it into `settings.json` before OpenChamber starts. Without it, the UI loads but terminals fail with *"Connection failed: Terminal stream connection error"*.
 
@@ -86,26 +86,23 @@ Traditional SSH access — connect via SSH and run `opencode` interactively. See
 
 ### Authentication for Web/Serve Modes
 
-Protect your web/serve endpoint with HTTP Basic Auth:
+OpenCode 2 always requires a server password. Set it explicitly:
 
 ```bash
 OPENCODE_SERVER_PASSWORD=your-secure-password
-OPENCODE_SERVER_USERNAME=opencode   # optional, defaults to "opencode"
 ```
 
-These env vars are read directly by opencode. When set, browsers will show a native login dialog.
+OpenCode 2 reads this legacy name, and also reads `OPENCODE_PASSWORD` when the legacy name is unset. `OPENCODE_SERVER_USERNAME` is not used.
 
-To connect with `opencode attach` when a password is set, pass the credentials via flag or environment variable:
+If you leave the password empty, the entrypoint generates one on first start, stores it in the `coder-home` volume, and prints it in the container log. Later restarts reuse that file.
+
+Connect a local OpenCode 2 client with the same password:
 
 ```bash
-# Using the -p / --password flag (and optionally -u / --username):
-opencode attach -p your-secure-password https://your-domain.example.com
-
-# Or set the environment variable on the client side:
-OPENCODE_SERVER_PASSWORD=your-secure-password opencode attach https://your-domain.example.com
+OPENCODE_SERVER_PASSWORD=your-secure-password opencode --server https://your-domain.example.com
 ```
 
-> **Note:** Client-side password support for `opencode attach` was added in [opencode#9095](https://github.com/anomalyco/opencode/pull/9095). Make sure you are running a recent version of opencode on your local machine.
+The local client has to be OpenCode 2 as well. A v1 `opencode attach` client cannot speak to this server.
 
 ### Port Configuration
 
@@ -138,11 +135,11 @@ OPENCODE_PORT=8080
 
 5. **Connect**:
    ```bash
-   # Browser (web mode)
+   # Browser (serve or web mode)
    https://opencode.example.com
 
-   # Remote TUI (serve mode — default)
-   opencode attach https://opencode.example.com
+   # Remote TUI (serve mode — default). The local client must be OpenCode 2.
+   opencode --server https://opencode.example.com
    ```
 
 ### Optional: Enable SSH Access
@@ -319,7 +316,7 @@ On first start, if no config exists, the container creates `~/.config/opencode/o
 }
 ```
 
-This grants opencode permission to execute all tools without prompting.
+This grants opencode permission to execute all tools without prompting. OpenCode 2 still reads this v1 permission shape, so existing config files do not need to be rewritten.
 
 ### Override via Environment Variable
 
@@ -366,7 +363,8 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **Git** | System | |
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea CLI (tea)** | 0.11.0 | Pinned prebuilt binary; authenticates via `GITEA_URL` + `GITEA_TOKEN` |
-| **OpenChamber** | Latest at build time | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Pinned to `latest`; pass `--build-arg CACHEBUST=$(date +%s)` (or a commit SHA) on rebuild to force a fresh pull |
+| **OpenCode** | 2.0.16 | Pinned CLI (`OPENCODE_VERSION`). `OPENCODE_AUTO_UPDATE=true` moves it forward on the v2 channel |
+| **OpenChamber** | 2.0.1 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Requires OpenCode 2.0.15 or newer |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
 | **pnpm** | Latest | Fast, disk-efficient package manager (global) |
@@ -402,6 +400,8 @@ Both volumes are Docker named volumes, which persist data across container resta
 
 On first start (when the `coder-home` volume is empty), the entrypoint copies a skeleton directory into `/home/coder` with the opencode binary and default directory structure. Subsequent starts reuse the existing home directory contents.
 
+An existing volume that still has an OpenCode 1 binary is upgraded in place: the entrypoint replaces `~/.opencode/bin/opencode` with the image's OpenCode 2 binary and leaves `~/.config/opencode` and `~/.local/share/opencode` untouched. OpenCode 2 migrates that session data on first start. After that migration, downgrading the binary to OpenCode 1 is not supported. A binary that is already 2.x is left alone, including one installed by `OPENCODE_AUTO_UPDATE`.
+
 ### Health Check
 
 The container includes a Docker HEALTHCHECK that adapts to the active mode:
@@ -418,8 +418,8 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, `openchamber`, or `ssh` |
 | `OPENCODE_PORT` | No | `4096` | Port for web/serve/openchamber modes |
 | `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
-| `OPENCODE_SERVER_PASSWORD` | No | — | HTTP Basic Auth password for web/serve (ignored in openchamber mode) |
-| `OPENCODE_SERVER_USERNAME` | No | `opencode` | HTTP Basic Auth username for web/serve (ignored in openchamber mode) |
+| `OPENCODE_SERVER_PASSWORD` | No | generated and persisted | Server password for web/serve. OpenCode 2 also accepts `OPENCODE_PASSWORD`. Ignored in openchamber mode. There is no username |
+| `OPENCODE_SERVER_USERNAME` | No | — | Ignored. OpenCode 2 does not use an HTTP Basic Auth username |
 | `OPENCHAMBER_UI_PASSWORD` | No | — | UI password for OpenChamber mode (shared, no username) |
 | `OPENCHAMBER_PUBLIC_ORIGIN` | No (but required behind a reverse proxy) | — | Public origin (`https://host[:port]`) for OpenChamber mode. Seeded into `settings.json` so the terminal WebSocket's origin check accepts requests proxied through Traefik/nginx |
 | `SSH_ENABLED` | No | `false` | Start SSH in background for serve/web modes |
@@ -445,7 +445,7 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 
 ## Auto-Update
 
-By default, the container uses the OpenCode version that was installed when the image was built. To check for and install the latest version on every container start, set:
+By default, the container uses the pinned OpenCode 2 version installed when the image was built. To check for and install the latest OpenCode 2 release on every container start, set:
 
 ```bash
 OPENCODE_AUTO_UPDATE=true
@@ -497,6 +497,7 @@ tests/
   test_logging.bats           # Tests for log_info, log_warn, log_error
   test_validate_env.bats      # Tests for all env validation paths
   test_env_forwarding.bats    # Tests for the API-key env forwarding to opencode
+  test_opencode_v2.bats       # Tests for the v1-to-v2 binary upgrade and server password
 ```
 
 ### CI
@@ -515,17 +516,15 @@ GitHub Actions runs on every push to `main` and on all pull requests:
 - On Dokploy, confirm a domain is configured pointing to the container's port 4096
 - If auth is enabled, ensure `OPENCODE_SERVER_PASSWORD` is set correctly
 
-### Cannot attach remote TUI
+### Cannot connect a remote TUI
 
 - The default mode is `serve` — verify the container is running
 - Ensure the port/domain is reachable from your local machine
-- **If password auth is enabled**, pass credentials using the `-p` flag or the `OPENCODE_SERVER_PASSWORD` environment variable on the client side:
+- The local client must be OpenCode 2. Connect with `opencode --server`, and pass the server password:
   ```bash
-  opencode attach -p your-secure-password https://your-domain.example.com
-  # or
-  OPENCODE_SERVER_PASSWORD=your-secure-password opencode attach https://your-domain.example.com
+  OPENCODE_SERVER_PASSWORD=your-secure-password opencode --server https://your-domain.example.com
   ```
-  > Client-side auth support was added in [opencode#9095](https://github.com/anomalyco/opencode/pull/9095). Ensure your local opencode is up to date.
+- If you did not set a password, the generated one is printed once in the container log (`Generated server password:`) and then reused from the volume.
 
 ### OpenChamber UI not loading
 
@@ -533,7 +532,7 @@ GitHub Actions runs on every push to `main` and on all pull requests:
 - Check logs: `docker compose logs opencode` — you should see both `Starting OpenChamber web UI on port …` and the spawned opencode subprocess starting
 - If you set `OPENCODE_SERVER_PASSWORD`, note that it's ignored in this mode — use `OPENCHAMBER_UI_PASSWORD` instead
 - The UI uses a single shared password (no username) — enter just the password at the browser prompt
-- Remember: `opencode attach` does **not** work in openchamber mode because the opencode REST server is bound to internal loopback only. Switch to `serve` mode if you need remote TUI access
+- `opencode --server` does not connect in openchamber mode, because the OpenCode server is bound to internal loopback only. Switch to `serve` mode if you need a remote TUI
 - The internal opencode subprocess binds to port `4097` (or `4098` if your `OPENCODE_PORT=4097`). These ports are not exposed but must be free inside the container
 
 ### Cannot connect via SSH
