@@ -286,7 +286,12 @@ fi
 OPENCODE_BIN="/home/coder/.opencode/bin/opencode"
 if ! ensure_opencode_binary "$OPENCODE_BIN" "$OPENCODE_SKEL_BIN"; then
     log_warn "OpenCode binary not found. Reinstalling..."
-    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash"; then
+    # Reinstall the version the image was built with, not whatever is latest.
+    REINSTALL_ARGS="--no-modify-path"
+    if [ -s /etc/opencode-version ]; then
+        REINSTALL_ARGS="--version $(printf %q "$(tr -d '[:space:]' < /etc/opencode-version)") $REINSTALL_ARGS"
+    fi
+    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash -s -- $REINSTALL_ARGS"; then
         log_info "OpenCode reinstalled successfully."
     else
         log_error "Failed to install OpenCode. Container cannot start."
@@ -461,30 +466,6 @@ chown -R coder:coder /home/coder/.local/share/opencode
 chown -R coder:coder /home/coder/.config
 
 # ==============================================================================
-# Git Repo Cloning
-# ==============================================================================
-if [ -n "${GIT_REPO_URL:-}" ]; then
-    CLONE_DIR="/home/coder/workspace/$(basename "$GIT_REPO_URL" .git)"
-    if [ ! -d "$CLONE_DIR" ]; then
-        # Shell-escape everything interpolated into the su -c command line
-        CLONE_CMD="git clone"
-        if [ -n "${GIT_BRANCH:-}" ]; then
-            CLONE_CMD="$CLONE_CMD --branch $(printf %q "$GIT_BRANCH")"
-        fi
-        CLONE_CMD="$CLONE_CMD $(printf %q "$GIT_REPO_URL") $(printf %q "$CLONE_DIR")"
-        log_info "Cloning $GIT_REPO_URL into $CLONE_DIR..."
-        if su - coder -c "$CLONE_CMD"; then
-            log_info "Repository cloned successfully."
-        else
-            log_error "Failed to clone repository from $GIT_REPO_URL"
-            log_warn "Continuing without repository — check your GIT_REPO_URL and network."
-        fi
-    else
-        log_info "Repository already exists at $CLONE_DIR, skipping clone."
-    fi
-fi
-
-# ==============================================================================
 # Git Config
 # ==============================================================================
 if [ -n "${GIT_USER_NAME:-}" ]; then
@@ -541,6 +522,32 @@ if [ -s "$OPENCODE_ENV_FILE" ]; then
     log_info "Forwarded env vars: $(grep -oP '(?<=export )\w+' "$OPENCODE_ENV_FILE" | tr '\n' ' ')"
 else
     log_warn "No API keys or server config env vars found to forward."
+fi
+
+# ==============================================================================
+# Git Repo Cloning
+# ==============================================================================
+# Runs after the gh/tea credential setup and the profile.d env file so that
+# private HTTPS clones can use GITHUB_TOKEN through the gh credential helper.
+if [ -n "${GIT_REPO_URL:-}" ]; then
+    CLONE_DIR="/home/coder/workspace/$(basename "$GIT_REPO_URL" .git)"
+    if [ ! -d "$CLONE_DIR" ]; then
+        # Shell-escape everything interpolated into the su -c command line
+        CLONE_CMD="git clone"
+        if [ -n "${GIT_BRANCH:-}" ]; then
+            CLONE_CMD="$CLONE_CMD --branch $(printf %q "$GIT_BRANCH")"
+        fi
+        CLONE_CMD="$CLONE_CMD $(printf %q "$GIT_REPO_URL") $(printf %q "$CLONE_DIR")"
+        log_info "Cloning $GIT_REPO_URL into $CLONE_DIR..."
+        if su - coder -c "$CLONE_CMD"; then
+            log_info "Repository cloned successfully."
+        else
+            log_error "Failed to clone repository from $GIT_REPO_URL"
+            log_warn "Continuing without repository — check your GIT_REPO_URL and network."
+        fi
+    else
+        log_info "Repository already exists at $CLONE_DIR, skipping clone."
+    fi
 fi
 
 case "$OPENCODE_MODE" in

@@ -83,8 +83,17 @@ ENV PATH="/home/coder/.opencode/bin:${PATH}"
 ENV GOPATH="/home/coder/go"
 ENV PATH="${GOPATH}/bin:/usr/local/go/bin:${PATH}"
 
-# Create skeleton directory for first-boot home initialization
+# Docker ENV PATH does not reach `su - coder` (how the entrypoint starts
+# opencode/openchamber) or SSH login shells: both reset PATH. Re-add the
+# tool directories via profile.d so go and opencode resolve there too.
 USER root
+RUN printf '%s\n' \
+    'export GOPATH="/home/coder/go"' \
+    'export PATH="/home/coder/.opencode/bin:${GOPATH}/bin:/usr/local/go/bin:${PATH}"' \
+    > /etc/profile.d/00-agent-path.sh \
+    && chmod 644 /etc/profile.d/00-agent-path.sh
+
+# Create skeleton directory for first-boot home initialization
 RUN echo "${OPENCODE_VERSION}" > /etc/opencode-version \
     && mkdir -p /etc/skel.coder/.config/opencode \
     /etc/skel.coder/.local/share/opencode \

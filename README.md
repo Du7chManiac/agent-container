@@ -561,7 +561,7 @@ ssh-keygen -R "[localhost]:2222"
 ### opencode command not found
 
 - The binary should be at `~/.opencode/bin/opencode`. Check with: `ls -la ~/.opencode/bin/`
-- If missing, reinstall: `curl -fsSL https://opencode.ai/install | bash`
+- If missing, reinstall OpenCode 2: `curl -fsSL https://opencode.ai/v2/install | bash` (the unversioned `https://opencode.ai/install` script installs OpenCode 1)
 
 ### Container exits immediately
 
