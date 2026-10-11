@@ -117,7 +117,10 @@ RUN chmod +x /entrypoint.sh /healthcheck.sh
 
 EXPOSE 4096 22
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# --start-interval probes every 2s until the first pass, so the container is
+# marked healthy (and routed by Traefik) seconds after the server is up rather
+# than after the first 30s interval. Engines older than Docker 25 ignore it.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s --retries=3 \
     CMD /healthcheck.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
