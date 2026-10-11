@@ -262,6 +262,82 @@ scrub_managed_opencode_auth() {
     chmod 644 "$env_file"
 }
 
+OPENCHAMBER_PACKAGE="@openchamber/web"
+# Major line the openchamber flags and env vars below are written for; updates
+# stay on it the same way OpenCode updates stay on the v2 installer.
+OPENCHAMBER_UPDATE_RANGE="2"
+
+# Version of the globally installed OpenChamber, empty when not installed.
+openchamber_installed_version() {
+    npm ls -g --depth=0 --json "$OPENCHAMBER_PACKAGE" 2>/dev/null \
+        | jq -r --arg p "$OPENCHAMBER_PACKAGE" '.dependencies[$p].version // empty' 2>/dev/null \
+        || true
+}
+
+# True when the running node satisfies a semver range, using the semver copy
+# that ships inside npm. Returns 0 when that copy cannot be loaded, so a
+# missing module does not block updates.
+node_satisfies() {
+    local range="$1" semver_dir=""
+    semver_dir="$(npm root -g 2>/dev/null)/npm/node_modules/semver"
+    node -e '
+        let semver;
+        try { semver = require(process.argv[1]); } catch { process.exit(0); }
+        process.exit(semver.satisfies(process.version, process.argv[2]) ? 0 : 1);
+    ' "$semver_dir" "$range"
+}
+
+# Newest published version in OPENCHAMBER_UPDATE_RANGE whose engines.node the
+# running node satisfies (2.2.0 needs node >= 24.14). Empty when the registry
+# cannot be reached. npm view returns a string for one match, an array for
+# more, and an error object on failure.
+openchamber_latest_version() {
+    local versions="" v="" engines=""
+    versions=$(npm view "${OPENCHAMBER_PACKAGE}@${OPENCHAMBER_UPDATE_RANGE}" version --json 2>/dev/null         | jq -r 'if type == "array" then .[] else . end | strings' 2>/dev/null         | sort -rV) || true
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        engines=$(npm view "${OPENCHAMBER_PACKAGE}@${v}" engines.node 2>/dev/null) || return 0
+        if [ -z "$engines" ] || node_satisfies "$engines"; then
+            printf '%s' "$v"
+            return 0
+        fi
+        log_warn "Skipping OpenChamber ${v}: needs node ${engines}, have $(node --version)."
+    done <<< "$versions"
+}
+
+# OpenChamber lives in the image's global node_modules, not the coder volume,
+# so a recreated container starts from the build-time version again. Runs on
+# every start when enabled. A failed update keeps the installed version.
+update_openchamber() {
+    log_info "Checking for OpenChamber updates..."
+    local current="" latest="" new=""
+    current=$(openchamber_installed_version)
+    log_info "Current OpenChamber version: ${current:-not installed}"
+
+    latest=$(openchamber_latest_version)
+    if [ -z "$latest" ]; then
+        log_warn "Could not look up the latest OpenChamber release. Continuing with current version."
+        return 0
+    fi
+    if [ "$current" = "$latest" ]; then
+        log_info "OpenChamber is already up to date (${current})."
+        return 0
+    fi
+    # Never downgrade, e.g. a newer release installed by hand.
+    if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$current" ]; then
+        log_info "OpenChamber ${current} is newer than the latest usable release (${latest}). Keeping it."
+        return 0
+    fi
+
+    if npm install -g "${OPENCHAMBER_PACKAGE}@${latest}" >/dev/null 2>&1; then
+        npm cache clean --force >/dev/null 2>&1 || true
+        new=$(openchamber_installed_version)
+        log_info "OpenChamber updated: ${current:-not installed} -> ${new:-$latest}"
+    else
+        log_warn "OpenChamber update failed. Continuing with current version."
+    fi
+}
+
 # Guard: when sourced for testing, stop here and export only function definitions
 if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
     # shellcheck disable=SC2317
@@ -431,6 +507,19 @@ update_opencode() {
 
 if [ "$OPENCODE_AUTO_UPDATE" = "true" ] || [ "$OPENCODE_AUTO_UPDATE" = "1" ]; then
     update_opencode
+fi
+
+# Follows OPENCODE_AUTO_UPDATE unless set, so both halves of openchamber mode
+# move together. Only openchamber mode runs it, the other modes do not use it.
+OPENCHAMBER_AUTO_UPDATE="${OPENCHAMBER_AUTO_UPDATE:-$OPENCODE_AUTO_UPDATE}"
+
+if [ "$OPENCODE_MODE" = "openchamber" ] \
+    && { [ "$OPENCHAMBER_AUTO_UPDATE" = "true" ] || [ "$OPENCHAMBER_AUTO_UPDATE" = "1" ]; }; then
+    update_openchamber
+    # Newer OpenChamber releases raise their minimum OpenCode (2.2.0 needs 2.0.20).
+    if [ "$OPENCODE_AUTO_UPDATE" != "true" ] && [ "$OPENCODE_AUTO_UPDATE" != "1" ]; then
+        log_warn "OPENCHAMBER_AUTO_UPDATE is on but OPENCODE_AUTO_UPDATE is off. A newer OpenChamber may refuse to start with the pinned OpenCode; set OPENCODE_AUTO_UPDATE=true too."
+    fi
 fi
 
 # ==============================================================================

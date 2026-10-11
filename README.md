@@ -76,6 +76,19 @@ Differences from `web` mode:
 
 Under the hood the entrypoint runs `openchamber --port $OPENCODE_PORT --host 0.0.0.0 --foreground`, and the spawned opencode subprocess binds to a private loopback port (`4097` by default, `4098` if you set `OPENCODE_PORT=4097`).
 
+#### GitHub in OpenChamber
+
+OpenChamber 2.2 has its own GitHub sign-in (Settings, OAuth device flow, stored in `~/.config/openchamber/github-auth.json` on the volume). It does not replace `GITHUB_TOKEN`, because the two cover different tools:
+
+| | `GITHUB_TOKEN` | OpenChamber sign-in |
+| --- | --- | --- |
+| `gh` CLI (agent and terminal) | Yes | No |
+| `git push` / `fetch` from the agent or the terminal | Yes, through `gh auth setup-git` | No |
+| OpenChamber PR panel, PR status, issue picker | Yes, after you pick the gh account in OpenChamber's settings | Yes |
+| Git actions OpenChamber runs itself (clone, fork PR worktrees) | Yes, after you pick the gh account | Yes |
+
+OpenChamber reads the `gh` CLI's token (`gh auth token`, which returns `GITHUB_TOKEN`) and lists it as an account in its settings, so you can use one token for everything. Use the OpenChamber sign-in only when you want a different account in the UI, and keep `GITHUB_TOKEN` (or run `gh auth login` in the terminal) so the agent can use `gh` and push.
+
 ### SSH Mode (advanced)
 
 ```bash
@@ -356,7 +369,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| **Node.js** | 22.x LTS | Via NodeSource |
+| **Node.js** | 24.x LTS | Via NodeSource. OpenChamber 2.2 and newer need 24.14 or newer |
 | **npm** | Bundled with Node.js | |
 | **Python 3** | System (3.12) | With pip and venv |
 | **Go** | 1.26.1 | Official binary |
@@ -364,7 +377,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea CLI (tea)** | 0.11.0 | Pinned prebuilt binary; authenticates via `GITEA_URL` + `GITEA_TOKEN` |
 | **OpenCode** | 2.0.16 | Pinned CLI (`OPENCODE_VERSION`). `OPENCODE_AUTO_UPDATE=true` moves it forward on the v2 channel |
-| **OpenChamber** | 2.0.1 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Requires OpenCode 2.0.15 or newer |
+| **OpenChamber** | 2.0.1 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Requires OpenCode 2.0.15 or newer. `OPENCHAMBER_AUTO_UPDATE=true` moves it forward on the 2.x line |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
 | **pnpm** | Latest | Fast, disk-efficient package manager (global) |
@@ -418,6 +431,7 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, `openchamber`, or `ssh` |
 | `OPENCODE_PORT` | No | `4096` | Port for web/serve/openchamber modes |
 | `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
+| `OPENCHAMBER_AUTO_UPDATE` | No | value of `OPENCODE_AUTO_UPDATE` | Set to `true` to update OpenChamber on startup (openchamber mode only) |
 | `OPENCODE_SERVER_PASSWORD` | No | generated and persisted | Server password for web/serve. OpenCode 2 also accepts `OPENCODE_PASSWORD`. Ignored in openchamber mode. There is no username |
 | `OPENCODE_SERVER_USERNAME` | No | — | Ignored. OpenCode 2 does not use an HTTP Basic Auth username |
 | `OPENCHAMBER_UI_PASSWORD` | No | — | UI password for OpenChamber mode (shared, no username) |
@@ -452,6 +466,16 @@ OPENCODE_AUTO_UPDATE=true
 ```
 
 The update runs before services start. If the update fails (e.g., due to network issues), the container continues with the existing version.
+
+In `openchamber` mode, OpenChamber is updated on start as well. It follows `OPENCODE_AUTO_UPDATE` by default, so OpenCode and OpenChamber stay at matching versions. To control it separately, set:
+
+```bash
+OPENCHAMBER_AUTO_UPDATE=true   # or false to keep the image's pinned OpenChamber
+```
+
+The entrypoint compares the installed `@openchamber/web` with the newest 2.x release on npm that supports the container's Node.js version. It only runs `npm install -g` when that release is newer than the installed one. Updates stay on the 2.x line, the same way OpenCode updates stay on the v2 channel. A new major version needs an image update, because the startup flags may change. OpenChamber is installed in the image, not in the `/home/coder` volume. A recreated container (for example after a Dokploy redeploy) starts from the image's version again and updates on that start.
+
+Newer OpenChamber releases raise the minimum OpenCode version (2.2.0 needs OpenCode 2.0.20, newer than the image's pinned 2.0.16). If you turn on `OPENCHAMBER_AUTO_UPDATE` without `OPENCODE_AUTO_UPDATE`, the entrypoint logs a warning, because the updated OpenChamber may refuse the pinned OpenCode.
 
 ## Environment Validation
 

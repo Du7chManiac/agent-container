@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js 22.x via NodeSource
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Node.js 24.x via NodeSource (OpenChamber 2.2+ needs node >= 24.14)
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
