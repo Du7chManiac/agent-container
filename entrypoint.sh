@@ -158,6 +158,9 @@ write_opencode_env_file() {
 # v2 installer. The unversioned https://opencode.ai/install script still ships v1.
 OPENCODE_INSTALL_URL="https://opencode.ai/v2/install"
 OPENCODE_SKEL_BIN="/etc/skel.coder/.opencode/bin/opencode"
+OPENCODE_BIN="/home/coder/.opencode/bin/opencode"
+# Release metadata the v2 installer itself reads to resolve "latest".
+OPENCODE_LATEST_URL="https://opencode.ai/update/api/latest/cli/npm"
 SERVER_PASSWORD_FILE="/home/coder/.config/opencode/server-password"
 
 # First semver-looking token from `binary --version`, without a leading v.
@@ -338,6 +341,53 @@ update_openchamber() {
     fi
 }
 
+# Latest OpenCode v2 release, empty when the lookup fails.
+opencode_latest_version() {
+    curl -fsSL --max-time 15 "$OPENCODE_LATEST_URL" 2>/dev/null \
+        | jq -r '.version // empty | strings' 2>/dev/null \
+        || true
+}
+
+# The installer downloads the full binary even when it is already current, so
+# resolve the latest release first and only run it when the version differs.
+# When the lookup fails, fall back to the unpinned installer.
+update_opencode() {
+    local bin="${1:-$OPENCODE_BIN}"
+    local current="" latest="" new="" args=""
+    log_info "Checking for OpenCode updates..."
+    current=$(opencode_version_of "$bin")
+    log_info "Current OpenCode version: ${current:-not installed}"
+
+    latest=$(opencode_latest_version)
+    if [ -n "$latest" ] && [ "$current" = "$latest" ]; then
+        log_info "OpenCode is already up to date (${current})."
+        return 0
+    fi
+    if [ -n "$latest" ]; then
+        args="--version $(printf %q "$latest")"
+    fi
+
+    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash -s -- $args" 2>/dev/null; then
+        new=$(opencode_version_of "$bin")
+        if [ "$current" != "$new" ]; then
+            log_info "OpenCode updated: ${current:-not installed} -> ${new:-unknown}"
+            # Update skeleton so new containers also get the latest
+            cp -a "$bin" "$OPENCODE_SKEL_BIN" 2>/dev/null || true
+        else
+            log_info "OpenCode is already up to date (${new})."
+        fi
+    else
+        log_warn "OpenCode update failed. Continuing with current version."
+    fi
+}
+
+# Give paths under the coder home back to coder. Only entries that are not
+# already coder:coder are changed, so a large session store costs a stat walk
+# instead of a chown, and an inode write, for every file on every boot.
+fix_coder_ownership() {
+    find "$@" \( ! -user coder -o ! -group coder \) -exec chown -h coder:coder {} +
+}
+
 # Guard: when sourced for testing, stop here and export only function definitions
 if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
     # shellcheck disable=SC2317
@@ -359,7 +409,6 @@ fi
 # Ensure the home binary is OpenCode v2. An existing volume keeps a v1 binary
 # that is still executable, so a missing-file check is not enough. Config and
 # session data stay where they are; v2 migrates them on first start.
-OPENCODE_BIN="/home/coder/.opencode/bin/opencode"
 if ! ensure_opencode_binary "$OPENCODE_BIN" "$OPENCODE_SKEL_BIN"; then
     log_warn "OpenCode binary not found. Reinstalling..."
     # Reinstall the version the image was built with, not whatever is latest.
@@ -476,35 +525,6 @@ fi
 # ==============================================================================
 OPENCODE_AUTO_UPDATE="${OPENCODE_AUTO_UPDATE:-false}"
 
-update_opencode() {
-    log_info "Checking for OpenCode updates..."
-
-    # Get current version (handle missing binary gracefully)
-    local current_version=""
-    if [ -x "$OPENCODE_BIN" ]; then
-        current_version=$(su - coder -c "$OPENCODE_BIN --version" 2>/dev/null || echo "unknown")
-    fi
-    log_info "Current OpenCode version: ${current_version:-not installed}"
-
-    # Download latest version
-    if su - coder -c "curl -fsSL ${OPENCODE_INSTALL_URL} | bash" 2>/dev/null; then
-        local new_version=""
-        if [ -x "$OPENCODE_BIN" ]; then
-            new_version=$(su - coder -c "$OPENCODE_BIN --version" 2>/dev/null || echo "unknown")
-        fi
-
-        if [ "$current_version" != "$new_version" ]; then
-            log_info "OpenCode updated: ${current_version} -> ${new_version}"
-            # Update skeleton so new containers also get the latest
-            cp -a "$OPENCODE_BIN" /etc/skel.coder/.opencode/bin/opencode 2>/dev/null || true
-        else
-            log_info "OpenCode is already up to date (${new_version})."
-        fi
-    else
-        log_warn "OpenCode update failed. Continuing with current version."
-    fi
-}
-
 if [ "$OPENCODE_AUTO_UPDATE" = "true" ] || [ "$OPENCODE_AUTO_UPDATE" = "1" ]; then
     update_opencode
 fi
@@ -551,8 +571,7 @@ fi
 
 # Ensure directories exist and are owned by coder
 mkdir -p /home/coder/.local/share/opencode
-chown -R coder:coder /home/coder/.local/share/opencode
-chown -R coder:coder /home/coder/.config
+fix_coder_ownership /home/coder/.local/share/opencode /home/coder/.config
 
 # ==============================================================================
 # Git Config

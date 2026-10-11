@@ -422,7 +422,7 @@ The container includes a Docker HEALTHCHECK that adapts to the active mode:
 - **openchamber**: Checks the OpenChamber UI on the configured port (any HTTP response counts, including 401 when a UI password is set)
 - **ssh**: Verifies the SSH daemon is accepting connections
 
-Docker and Dokploy will report the container as `healthy` once the primary service is ready.
+Docker and Dokploy will report the container as `healthy` once the primary service is ready. During the first 60 seconds the check runs every 2 seconds, so a container that starts quickly is marked healthy within seconds instead of after the first 30-second interval. This needs Docker Engine 25 or newer; older engines ignore it and wait for the first interval.
 
 ## Environment Variables
 
@@ -465,7 +465,7 @@ By default, the container uses the pinned OpenCode 2 version installed when the 
 OPENCODE_AUTO_UPDATE=true
 ```
 
-The update runs before services start. If the update fails (e.g., due to network issues), the container continues with the existing version.
+The update runs before services start. It first looks up the latest release and only downloads it when that differs from the installed version, so a restart with an up-to-date binary skips the download. If the update fails (e.g., due to network issues), the container continues with the existing version.
 
 In `openchamber` mode, OpenChamber is updated on start as well. It follows `OPENCODE_AUTO_UPDATE` by default, so OpenCode and OpenChamber stay at matching versions. To control it separately, set:
 
