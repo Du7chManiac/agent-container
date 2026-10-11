@@ -352,7 +352,7 @@ opencode_latest_version() {
 # resolve the latest release first and only run it when the version differs.
 # When the lookup fails, fall back to the unpinned installer.
 update_opencode() {
-    local bin="${1:-$OPENCODE_BIN}"
+    local bin="$1"
     local current="" latest="" new="" args=""
     log_info "Checking for OpenCode updates..."
     current=$(opencode_version_of "$bin")
@@ -526,7 +526,7 @@ fi
 OPENCODE_AUTO_UPDATE="${OPENCODE_AUTO_UPDATE:-false}"
 
 if [ "$OPENCODE_AUTO_UPDATE" = "true" ] || [ "$OPENCODE_AUTO_UPDATE" = "1" ]; then
-    update_opencode
+    update_opencode "$OPENCODE_BIN"
 fi
 
 # Follows OPENCODE_AUTO_UPDATE unless set, so both halves of openchamber mode
