@@ -364,7 +364,7 @@ docker buildx build --platform linux/arm64 -t opencode-agent .
 | **GitHub CLI (gh)** | Latest | Authenticate with `GITHUB_TOKEN` env var |
 | **Gitea CLI (tea)** | 0.11.0 | Pinned prebuilt binary; authenticates via `GITEA_URL` + `GITEA_TOKEN` |
 | **OpenCode** | 2.0.16 | Pinned CLI (`OPENCODE_VERSION`). `OPENCODE_AUTO_UPDATE=true` moves it forward on the v2 channel |
-| **OpenChamber** | 2.0.1 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Requires OpenCode 2.0.15 or newer |
+| **OpenChamber** | 2.0.1 | `@openchamber/web` — optional control-room UI, enabled via `OPENCODE_MODE=openchamber`. Requires OpenCode 2.0.15 or newer. `OPENCHAMBER_AUTO_UPDATE=true` moves it forward on the 2.x line |
 | **node-gyp** | Latest | Native addon build tool (global) |
 | **yarn** | Latest | Alternative package manager (global) |
 | **pnpm** | Latest | Fast, disk-efficient package manager (global) |
@@ -418,6 +418,7 @@ Docker and Dokploy will report the container as `healthy` once the primary servi
 | `OPENCODE_MODE` | No | `serve` | Access mode: `serve`, `web`, `openchamber`, or `ssh` |
 | `OPENCODE_PORT` | No | `4096` | Port for web/serve/openchamber modes |
 | `OPENCODE_AUTO_UPDATE` | No | `false` | Set to `true` to update OpenCode on startup |
+| `OPENCHAMBER_AUTO_UPDATE` | No | value of `OPENCODE_AUTO_UPDATE` | Set to `true` to update OpenChamber on startup (openchamber mode only) |
 | `OPENCODE_SERVER_PASSWORD` | No | generated and persisted | Server password for web/serve. OpenCode 2 also accepts `OPENCODE_PASSWORD`. Ignored in openchamber mode. There is no username |
 | `OPENCODE_SERVER_USERNAME` | No | — | Ignored. OpenCode 2 does not use an HTTP Basic Auth username |
 | `OPENCHAMBER_UI_PASSWORD` | No | — | UI password for OpenChamber mode (shared, no username) |
@@ -452,6 +453,14 @@ OPENCODE_AUTO_UPDATE=true
 ```
 
 The update runs before services start. If the update fails (e.g., due to network issues), the container continues with the existing version.
+
+In `openchamber` mode, OpenChamber is updated on start as well. It follows `OPENCODE_AUTO_UPDATE` by default, so OpenCode and OpenChamber stay at matching versions. To control it separately, set:
+
+```bash
+OPENCHAMBER_AUTO_UPDATE=true   # or false to keep the image's pinned OpenChamber
+```
+
+The entrypoint compares the installed `@openchamber/web` with the newest 2.x release on npm and only runs `npm install -g` when they differ. Updates stay on the 2.x line, the same way OpenCode updates stay on the v2 channel. A new major version needs an image update, because the startup flags may change. OpenChamber is installed in the image, not in the `/home/coder` volume. A recreated container (for example after a Dokploy redeploy) starts from the image's version again and updates on that start.
 
 ## Environment Validation
 

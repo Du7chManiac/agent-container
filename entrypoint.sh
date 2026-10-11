@@ -262,6 +262,56 @@ scrub_managed_opencode_auth() {
     chmod 644 "$env_file"
 }
 
+OPENCHAMBER_PACKAGE="@openchamber/web"
+# Major line the openchamber flags and env vars below are written for; updates
+# stay on it the same way OpenCode updates stay on the v2 installer.
+OPENCHAMBER_UPDATE_RANGE="2"
+
+# Version of the globally installed OpenChamber, empty when not installed.
+openchamber_installed_version() {
+    npm ls -g --depth=0 --json "$OPENCHAMBER_PACKAGE" 2>/dev/null \
+        | jq -r --arg p "$OPENCHAMBER_PACKAGE" '.dependencies[$p].version // empty' 2>/dev/null \
+        || true
+}
+
+# Newest published version in OPENCHAMBER_UPDATE_RANGE, empty when the registry
+# cannot be reached. npm view returns a string for one match, an array for more,
+# and an error object on failure.
+openchamber_latest_version() {
+    npm view "${OPENCHAMBER_PACKAGE}@${OPENCHAMBER_UPDATE_RANGE}" version --json 2>/dev/null \
+        | jq -r 'if type == "array" then .[] else . end | strings' 2>/dev/null \
+        | sort -V | tail -n 1 \
+        || true
+}
+
+# OpenChamber lives in the image's global node_modules, not the coder volume,
+# so a recreated container starts from the build-time version again. Runs on
+# every start when enabled. A failed update keeps the installed version.
+update_openchamber() {
+    log_info "Checking for OpenChamber updates..."
+    local current="" latest="" new=""
+    current=$(openchamber_installed_version)
+    log_info "Current OpenChamber version: ${current:-not installed}"
+
+    latest=$(openchamber_latest_version)
+    if [ -z "$latest" ]; then
+        log_warn "Could not look up the latest OpenChamber release. Continuing with current version."
+        return 0
+    fi
+    if [ "$current" = "$latest" ]; then
+        log_info "OpenChamber is already up to date (${current})."
+        return 0
+    fi
+
+    if npm install -g "${OPENCHAMBER_PACKAGE}@${latest}" >/dev/null 2>&1; then
+        npm cache clean --force >/dev/null 2>&1 || true
+        new=$(openchamber_installed_version)
+        log_info "OpenChamber updated: ${current:-not installed} -> ${new:-$latest}"
+    else
+        log_warn "OpenChamber update failed. Continuing with current version."
+    fi
+}
+
 # Guard: when sourced for testing, stop here and export only function definitions
 if [[ "${__SOURCED_FOR_TESTING:-}" == "true" ]]; then
     # shellcheck disable=SC2317
@@ -431,6 +481,15 @@ update_opencode() {
 
 if [ "$OPENCODE_AUTO_UPDATE" = "true" ] || [ "$OPENCODE_AUTO_UPDATE" = "1" ]; then
     update_opencode
+fi
+
+# Follows OPENCODE_AUTO_UPDATE unless set, so both halves of openchamber mode
+# move together. Only openchamber mode runs it, the other modes do not use it.
+OPENCHAMBER_AUTO_UPDATE="${OPENCHAMBER_AUTO_UPDATE:-$OPENCODE_AUTO_UPDATE}"
+
+if [ "$OPENCODE_MODE" = "openchamber" ] \
+    && { [ "$OPENCHAMBER_AUTO_UPDATE" = "true" ] || [ "$OPENCHAMBER_AUTO_UPDATE" = "1" ]; }; then
+    update_openchamber
 fi
 
 # ==============================================================================
