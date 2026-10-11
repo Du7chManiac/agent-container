@@ -274,14 +274,35 @@ openchamber_installed_version() {
         || true
 }
 
-# Newest published version in OPENCHAMBER_UPDATE_RANGE, empty when the registry
-# cannot be reached. npm view returns a string for one match, an array for more,
-# and an error object on failure.
+# True when the running node satisfies a semver range, using the semver copy
+# that ships inside npm. Returns 0 when that copy cannot be loaded, so a
+# missing module does not block updates.
+node_satisfies() {
+    local range="$1" semver_dir=""
+    semver_dir="$(npm root -g 2>/dev/null)/npm/node_modules/semver"
+    node -e '
+        let semver;
+        try { semver = require(process.argv[1]); } catch { process.exit(0); }
+        process.exit(semver.satisfies(process.version, process.argv[2]) ? 0 : 1);
+    ' "$semver_dir" "$range"
+}
+
+# Newest published version in OPENCHAMBER_UPDATE_RANGE whose engines.node the
+# running node satisfies (2.2.0 needs node >= 24.14). Empty when the registry
+# cannot be reached. npm view returns a string for one match, an array for
+# more, and an error object on failure.
 openchamber_latest_version() {
-    npm view "${OPENCHAMBER_PACKAGE}@${OPENCHAMBER_UPDATE_RANGE}" version --json 2>/dev/null \
-        | jq -r 'if type == "array" then .[] else . end | strings' 2>/dev/null \
-        | sort -V | tail -n 1 \
-        || true
+    local versions="" v="" engines=""
+    versions=$(npm view "${OPENCHAMBER_PACKAGE}@${OPENCHAMBER_UPDATE_RANGE}" version --json 2>/dev/null         | jq -r 'if type == "array" then .[] else . end | strings' 2>/dev/null         | sort -rV) || true
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        engines=$(npm view "${OPENCHAMBER_PACKAGE}@${v}" engines.node 2>/dev/null) || return 0
+        if [ -z "$engines" ] || node_satisfies "$engines"; then
+            printf '%s' "$v"
+            return 0
+        fi
+        log_warn "Skipping OpenChamber ${v}: needs node ${engines}, have $(node --version)."
+    done <<< "$versions"
 }
 
 # OpenChamber lives in the image's global node_modules, not the coder volume,
@@ -300,6 +321,11 @@ update_openchamber() {
     fi
     if [ "$current" = "$latest" ]; then
         log_info "OpenChamber is already up to date (${current})."
+        return 0
+    fi
+    # Never downgrade, e.g. a newer release installed by hand.
+    if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$current" ]; then
+        log_info "OpenChamber ${current} is newer than the latest usable release (${latest}). Keeping it."
         return 0
     fi
 
@@ -490,6 +516,10 @@ OPENCHAMBER_AUTO_UPDATE="${OPENCHAMBER_AUTO_UPDATE:-$OPENCODE_AUTO_UPDATE}"
 if [ "$OPENCODE_MODE" = "openchamber" ] \
     && { [ "$OPENCHAMBER_AUTO_UPDATE" = "true" ] || [ "$OPENCHAMBER_AUTO_UPDATE" = "1" ]; }; then
     update_openchamber
+    # Newer OpenChamber releases raise their minimum OpenCode (2.2.0 needs 2.0.20).
+    if [ "$OPENCODE_AUTO_UPDATE" != "true" ] && [ "$OPENCODE_AUTO_UPDATE" != "1" ]; then
+        log_warn "OPENCHAMBER_AUTO_UPDATE is on but OPENCODE_AUTO_UPDATE is off. A newer OpenChamber may refuse to start with the pinned OpenCode; set OPENCODE_AUTO_UPDATE=true too."
+    fi
 fi
 
 # ==============================================================================

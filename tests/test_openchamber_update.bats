@@ -1,12 +1,15 @@
 #!/usr/bin/env bats
 
 # update_openchamber with a fake npm on PATH. FAKE_INSTALLED is the installed
-# version (empty = not installed), FAKE_VIEW is the raw `npm view --json` output.
+# version (empty = not installed), view is the raw `npm view --json` output and
+# engines_<version> the engines.node of one release (missing = none declared).
 setup() {
     load test_helper
     FAKE_BIN="$TEST_TMPDIR/fakebin"
     STATE="$TEST_TMPDIR/state"
-    mkdir -p "$FAKE_BIN" "$STATE"
+    mkdir -p "$FAKE_BIN" "$STATE/root/npm/node_modules"
+    # The real semver that ships with npm, so node_satisfies runs for real.
+    ln -s "$(npm root -g)/npm/node_modules/semver" "$STATE/root/npm/node_modules/semver"
     cat > "$FAKE_BIN/npm" <<'NPM'
 #!/bin/bash
 state="$FAKE_STATE"
@@ -19,7 +22,14 @@ case "$1" in
             echo '{}'
         fi
         ;;
+    root)
+        echo "$state/root"
+        ;;
     view)
+        if [ "$3" = "engines.node" ]; then
+            cat "$state/engines_${2##*@}" 2>/dev/null
+            exit 0
+        fi
         cat "$state/view"
         [ "$(cat "$state/view_rc" 2>/dev/null)" != "1" ]
         ;;
@@ -95,4 +105,29 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"OpenChamber update failed"* ]]
     [ "$(cat "$STATE/installed")" = "2.0.1" ]
+}
+
+@test "openchamber_latest_version: skips releases that need a newer node" {
+    echo '["2.1.1","2.2.0"]' > "$STATE/view"
+    echo '>=999.0.0' > "$STATE/engines_2.2.0"
+    run openchamber_latest_version
+    # run merges stderr, so the skip warning comes before the version.
+    [[ "$output" == *"Skipping OpenChamber 2.2.0"* ]]
+    [ "${lines[${#lines[@]}-1]}" = "2.1.1" ]
+}
+
+@test "openchamber_latest_version: keeps a release whose engines match" {
+    echo '["2.1.1","2.2.0"]' > "$STATE/view"
+    echo '>=1.0.0' > "$STATE/engines_2.2.0"
+    run openchamber_latest_version
+    [ "$output" = "2.2.0" ]
+}
+
+@test "update_openchamber: never downgrades" {
+    echo 2.3.0 > "$STATE/installed"
+    echo '["2.1.1","2.2.0"]' > "$STATE/view"
+    run update_openchamber
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Keeping it"* ]]
+    [ ! -f "$STATE/install_calls" ]
 }
